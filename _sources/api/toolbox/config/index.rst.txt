@@ -34,5 +34,7 @@ Submodules
    :maxdepth: 1
 
    /api/toolbox/config/data_params/index
+   /api/toolbox/config/variableQC/index
+   /api/toolbox/config/variable_params/index
 
 
