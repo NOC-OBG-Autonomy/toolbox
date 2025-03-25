@@ -32,8 +32,7 @@ jobs:
 
       - name: Ensure Static Files Are Present
         run: |
-          mkdir -p docs/_build/html/_static
-          cp -r docs/_static/* docs/_build/html/_static/
+          ls -p docs/_build/html/
 
       - name: Disable Jekyll Processing
         run: touch docs/_build/html/.nojekyll
