@@ -14,12 +14,14 @@ class FactoryCalibration(DynamicConfig):
     pass
 
 
+@dataclass
 class SensorSpecificCorrection(DynamicConfig):
     """Sensor Specific Correction parameters."""
 
     pass
 
 
+@dataclass
 class AutomatedCrossSensorAdjustment(DynamicConfig):
     """Automated Cross Sensor Adjustment parameters."""
 
