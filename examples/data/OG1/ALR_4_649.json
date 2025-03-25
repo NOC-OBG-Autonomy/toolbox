@@ -1,0 +1,304 @@
+{
+    "EGODeployment": [
+        {
+            "DEPLOYMENT_ID": 649,
+            "DEPLOYMENT_START_DATE": 20240609,
+            "SUMMARY_REPORT": "This campaign involves the deployment of two Autosub Long Range (ALR) and four gliders in the Iceland Basin under the Biological Influence on Future Ocean Storage of Carbon (BIO-Carbon) programme, funded by a Natural Environment Research Council (NERC) Strategic Research Grant. The platforms are planned for deployment in May/June 2024, with the gliders being deployed from and recovered by the RRS Discovery (DY180) alongside four Argo floats, and the ALRs being shore launched.",
+            "BASE_STATION": "available in the raw data",
+            "EMAIL": "apm1@noc.soton.ac.uk",
+            "NAME": "Adrian Martin",
+            "ACTIVE": 1,
+            "CAMPAIGNNAME": "BIO-Carbon",
+            "PROJNAME": "BIO-Carbon",
+            "PLATFORMMODEL": [
+                {
+                    "MODEL_VERSION_ID": 274,
+                    "MODEL_ID": 682,
+                    "CATEGORY_TYPE": "platforms",
+                    "DDESC": "Autosub Long Range 1500",
+                    "PLATFORM_MAKER": "National Oceanography Centre",
+                    "UNIQUE_ID": "B7600021",
+                    "PLATFORM_TYPE": "Autosub Long Range",
+                    "MODEL_NAME": "Autosub Long Range 1500",
+                    "WMO_INST_TYPE": 830
+                }
+            ],
+            "PLATFORMINSTANCE": [
+                {
+                    "PLAT_INSTANCE_VERSION_ID": 1295,
+                    "PLAT_INSTANCE_ID": 837,
+                    "DATA_TYPE": "EGO glider time-series data",
+                    "GLIDER_SERIAL_NO": "ALR_4",
+                    "PLATFORM_CODE": "ALR_4",
+                    "GLIDER_OWNER": "NOCS",
+                    "ICES_PLATFORM_CODE": "N/A",
+                    "PLATFORM_FAMILY": "open ocean glider"
+                }
+            ],
+            "SENSORLIST": [
+                {
+                    "SENSORMODEL": [
+                        {
+                            "MODEL_VERSION_ID": 273,
+                            "MODEL_ID": 681,
+                            "SENSOR_MODEL": "Sea-Bird SBE 52-MP moored profiler CTD",
+                            "SENSOR_MAKER": "Sea-Bird Scientific",
+                            "MODEL_NAME": "Sea-Bird SBE 52-MP moored profiler CTD",
+                            "INSTRUMENT_TYPE": "CTD"
+                        }
+                    ],
+                    "SENSORINSTANCE": [
+                        {
+                            "SENSOR_INSTANCE_VERSION_ID": 1661,
+                            "SENSOR_INSTANCE_ID": 1229,
+                            "SENSOR_SERIAL_NO": "0221",
+                            "SENSOR_NAME": "SBE 52-MP CTD 0221"
+                        }
+                    ],
+                    "PARAMETERLIST": [
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/PRESPR01/",
+                            "PREFLABEL": "Pressure (spatial coordinate) exerted by the water body by profiling pressure sensor and correction to read zero at sea level",
+                            "SDN_UOM_UM": "SDN:P06::UPDB",
+                            "OG1_PARAMETER_URN": "PRES",
+                            "OG1_UOM_UM": "decibar",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 15000,
+                            "FILLVALUE": -99,
+                            "SOURCENAME": "Pressure"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/CNDCST01/",
+                            "PREFLABEL": "Electrical conductivity of the water body by CTD",
+                            "SDN_UOM_UM": "SDN:P06::UECA",
+                            "OG1_PARAMETER_URN": "CNDC",
+                            "OG1_UOM_UM": "mhos/m",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 6.5,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Conductivity"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/TEMPST01/",
+                            "PREFLABEL": "Temperature of the water body by CTD or STD",
+                            "SDN_UOM_UM": "SDN:P06::UPAA",
+                            "OG1_PARAMETER_URN": "TEMP",
+                            "OG1_UOM_UM": "degree_Celsius",
+                            "VALID_MIN": -3,
+                            "VALID_MAX": 35,
+                            "FILLVALUE": -9,
+                            "SOURCENAME": "WaterTemperature"
+                        }
+                    ]
+                },
+                {
+                    "SENSORMODEL": [
+                        {
+                            "MODEL_VERSION_ID": 296,
+                            "MODEL_ID": 1041,
+                            "SENSOR_MODEL": "Sea-Bird SBE 43F Dissolved Oxygen Sensor",
+                            "SENSOR_MAKER": "Sea-Bird Scientific",
+                            "MODEL_NAME": "Sea-Bird SBE 43F Dissolved Oxygen Sensor",
+                            "INSTRUMENT_TYPE": "dissolved gas sensors"
+                        }
+                    ],
+                    "SENSORINSTANCE": [
+                        {
+                            "SENSOR_INSTANCE_VERSION_ID": 1659,
+                            "SENSOR_INSTANCE_ID": 1227,
+                            "SENSOR_SERIAL_NO": 4513,
+                            "SENSOR_NAME": "SBE 43F oxygen sensor 4513"
+                        }
+                    ],
+                    "PARAMETERLIST": [
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/OXYOCPFR/",
+                            "PREFLABEL": "Raw signal (frequency) of instrument output by oxygen sensor",
+                            "SDN_UOM_UM": "SDN:P06::UTHZ",
+                            "OG1_PARAMETER_URN": "FREQUENCY_DOXY",
+                            "OG1_UOM_UM": "hertz",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 25000,
+                            "FILLVALUE": -999,
+                            "SOURCENAME": "DissolvedOxygen"
+                        }
+                    ]
+                },
+                {
+                    "SENSORMODEL": [
+                        {
+                            "MODEL_VERSION_ID": 298,
+                            "MODEL_ID": 1061,
+                            "SENSOR_MODEL": "WET Labs {Sea-Bird WETLabs} ECO Triplet FLBBCDRT6K scattering fluorescence sensor",
+                            "SENSOR_MAKER": "WET Labs",
+                            "MODEL_NAME": "WET Labs {Sea-Bird WETLabs} ECO Triplet FLBBCDRT6K scattering fluorescence sensor",
+                            "INSTRUMENT_TYPE": "optical backscatter sensors"
+                        }
+                    ],
+                    "SENSORINSTANCE": [
+                        {
+                            "SENSOR_INSTANCE_VERSION_ID": 1657,
+                            "SENSOR_INSTANCE_ID": 1225,
+                            "SENSOR_SERIAL_NO": 8579,
+                            "SENSOR_NAME": "WET Labs ECO Triplet FLBBCDRT6K 8579"
+                        }
+                    ],
+                    "PARAMETERLIST": [
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/CCOMD002/",
+                            "PREFLABEL": "Concentration of coloured dissolved organic matter {CDOM Gelbstoff} per unit volume of the water body [dissolved plus reactive particulate phase] by in-situ WET Labs FDOM ECO fluorometer",
+                            "SDN_UOM_UM": "SDN:P06::UPPB",
+                            "OG1_PARAMETER_URN": "CDOM",
+                            "OG1_UOM_UM": "ppb",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 999,
+                            "FILLVALUE": -9,
+                            "SOURCENAME": "ColouredDissolvedOrganicMatter"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/BVSFO700/",
+                            "PREFLABEL": "Volume scattering coefficient of electromagnetic radiation (700nm wavelength) {Beta} in the water body by in-situ optical backscatter measurement",
+                            "SDN_UOM_UM": "SDN:P06::PMSR",
+                            "OG1_PARAMETER_URN": "BETA_BACKSCATTERING700",
+                            "OG1_UOM_UM": "count",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 9,
+                            "FILLVALUE": -9,
+                            "SOURCENAME": "ScatteringBeta700"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/CPHLPR01/",
+                            "PREFLABEL": "Concentration of chlorophyll-a {chl-a CAS 479-61-8} per unit volume of the water body [particulate >unknown phase] by in-situ chlorophyll fluorometer",
+                            "SDN_UOM_UM": "SDN:P06::UGPL",
+                            "OG1_PARAMETER_URN": "CHLA",
+                            "OG1_UOM_UM": "mg/m3",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 999,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Chlorophyll"
+                        }
+                    ]
+                },
+                {
+                    "SENSORMODEL": [
+                        {
+                            "MODEL_VERSION_ID": 281,
+                            "MODEL_ID": 761,
+                            "SENSOR_MODEL": "Autosub Long Range v2 {ALR} data logger",
+                            "SENSOR_MAKER": "National Oceanography Centre",
+                            "MODEL_NAME": "Autosub Long Range v2 {ALR} data logger",
+                            "INSTRUMENT_TYPE": "data loggers"
+                        }
+                    ],
+                    "SENSORINSTANCE": [
+                        {
+                            "SENSOR_INSTANCE_VERSION_ID": 1296,
+                            "SENSOR_INSTANCE_ID": 838,
+                            "SENSOR_SERIAL_NO": "ALR_4",
+                            "SENSOR_NAME": "ALR v1 data logger ALR_4"
+                        }
+                    ],
+                    "PARAMETERLIST": [
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/ADEPPT01/",
+                            "PREFLABEL": "Depth (spatial coordinate) relative to water surface in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::ULAA",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 9999,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Depth"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/HEADPT01/",
+                            "PREFLABEL": "Orientation (horizontal) of measurement platform relative to True North {heading} in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UAAA",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 360,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Yaw"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/ROLLPT01/",
+                            "PREFLABEL": "Orientation (roll) of measurement platform in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UAAA",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 360,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Roll"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/PTVELX01/",
+                            "PREFLABEL": "Velocity along x-axis of measurement platform relative to ground surface {surge} in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UVAA",
+                            "VALID_MIN": -2000,
+                            "VALID_MAX": 2000,
+                            "FILLVALUE": -9999,
+                            "SOURCENAME": "Surge"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/ALONPT01/",
+                            "PREFLABEL": "Longitude east of measurement platform in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UAAA",
+                            "VALID_MIN": -180,
+                            "VALID_MAX": 180,
+                            "FILLVALUE": -999,
+                            "SOURCENAME": "Longitude"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/PTCHPT01/",
+                            "PREFLABEL": "Orientation (pitch) of measurement platform in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UAAA",
+                            "VALID_MIN": 0,
+                            "VALID_MAX": 360,
+                            "FILLVALUE": -1,
+                            "SOURCENAME": "Pitch"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/PTVELZ01/",
+                            "PREFLABEL": "Velocity along z-axis of measurement platform relative to ground surface {heave} in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UVAA",
+                            "VALID_MIN": -2000,
+                            "VALID_MAX": 2000,
+                            "FILLVALUE": -9999,
+                            "SOURCENAME": "Heave"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/PTVELY01/",
+                            "PREFLABEL": "Velocity along y-axis of measurement platform relative to ground surface {sway} in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UVAA",
+                            "VALID_MIN": -2000,
+                            "VALID_MAX": 2000,
+                            "FILLVALUE": -9999,
+                            "SOURCENAME": "Sway"
+                        },
+                        {
+                            "OBJECTTYPE": "parameter",
+                            "SDN_PARAMETER_URN": "http://vocab.nerc.ac.uk/collection/P01/current/ALATPT01/",
+                            "PREFLABEL": "Latitude north of measurement platform in the water body by estimation using best available on-board navigation system and algorithm",
+                            "SDN_UOM_UM": "SDN:P06::UAAA",
+                            "VALID_MIN": -90,
+                            "VALID_MAX": 90,
+                            "FILLVALUE": -99,
+                            "SOURCENAME": "Latitude"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
