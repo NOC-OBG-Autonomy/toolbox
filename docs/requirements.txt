@@ -1,6 +1,4 @@
 sphinx
-sphinx_rtd_theme
-sphinx-book-theme
 sphinx-copybutton
 sphinx-last-updated-by-git
 sphinx-codeautolink
@@ -11,3 +9,4 @@ nbsphinx
 numpydoc
 IPython
 pickleshare
+insegel
