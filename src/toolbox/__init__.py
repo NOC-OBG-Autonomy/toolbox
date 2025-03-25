@@ -1,4 +1,4 @@
-"""Glider Toolbox base package. """
+"""Glider Toolbox base package."""
 
 __author__ = "Adam Ward"
-__credits__ = "National Oceanography Centre
+__credits__ = "National Oceanography Centre"

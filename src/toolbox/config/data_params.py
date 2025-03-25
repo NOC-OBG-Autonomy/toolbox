@@ -14,7 +14,7 @@ class FactoryCalibration(DynamicConfig):
     pass
 
 
-class SensorPecificCorrection(DynamicConfig):
+class SensorSpecificCorrection(DynamicConfig):
     """Sensor Specific Correction parameters."""
 
     pass
