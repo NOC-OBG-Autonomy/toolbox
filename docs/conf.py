@@ -78,7 +78,7 @@ autoapi_options = [
 #
 # html_theme = "sphinx_rtd_theme"
 html_theme = "insegel"
-
+html_baseurl = "https://noc-obg-autonomy.github.io/toolbox/"
 html_static_path = ["_static"]
 
 # Theme options are theme-specific and customize the look and feel of a theme

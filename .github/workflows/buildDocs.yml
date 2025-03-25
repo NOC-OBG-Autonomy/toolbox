@@ -28,12 +28,20 @@ jobs:
 
       - name: Build Documentation
         run: |
-          sphinx-build -b html docs/ docs/_build/
+          sphinx-build -b html docs/ docs/_build/html/
+
+      - name: Ensure Static Files Are Present
+        run: |
+          mkdir -p docs/_build/html/_static
+          cp -r docs/_static/* docs/_build/html/_static/
+
+      - name: Disable Jekyll Processing
+        run: touch docs/_build/html/.nojekyll
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages  # This is the GitHub Pages branch
-          folder: docs/_build/  # This is the folder to deploy
-          token: ${{ secrets.GH_PAT }}  # This is the GitHub token
-          clean: true  # Deletes old files in gh-pages before deploying
+          branch: gh-pages  # Deploy to the root of gh-pages
+          folder: docs/_build/html  # Ensure this points to the html folder
+          token: ${{ secrets.GH_PAT }}
+          clean: true  # Deletes old files before deployment
