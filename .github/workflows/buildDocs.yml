@@ -35,4 +35,5 @@ jobs:
         with:
           branch: gh-pages  # This is the GitHub Pages branch
           folder: docs/_build/html  # This is the folder to deploy
+          token: ${{ secrets.GH_PAT }}  # This is the GitHub token
           clean: true  # Deletes old files in gh-pages before deploying
