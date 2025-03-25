@@ -28,12 +28,12 @@ jobs:
 
       - name: Build Documentation
         run: |
-          sphinx-build -b html docs/ docs/_build/html
+          sphinx-build -b html docs/ docs/_build/
 
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages  # This is the GitHub Pages branch
-          folder: docs/_build/html  # This is the folder to deploy
+          folder: docs/_build/  # This is the folder to deploy
           token: ${{ secrets.GH_PAT }}  # This is the GitHub token
           clean: true  # Deletes old files in gh-pages before deploying
