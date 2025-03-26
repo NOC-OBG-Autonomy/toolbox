@@ -7,6 +7,8 @@
   "api/toolbox/config/variableQC/temperature_params/index": [],
   "api/toolbox/config/variable_params/index": [],
   "api/toolbox/index": [],
+  "api/toolbox/toolbox/index": [],
+  "api/toolbox/utils/OG1_io/index": [],
   "api/toolbox/utils/dynamic_classes/index": [],
   "api/toolbox/utils/index": [],
   "index": []
