@@ -56,15 +56,13 @@ autoapi_root = "api"
 
 autoapi_keep_files = False
 autoapi_options = [
-    # "members",
-    # "undoc-members",
-    "show-inheritance",
-    "show-module-summary",
-    "special-members",
-    "imported-members",
-    "no-private-members",
-    "no-inherited-members",
-    "no-class-attributes",
+    "members",  # Include all members (methods, attributes)
+    "undoc-members",  # Include undocumented members
+    "show-inheritance",  # Show class inheritance
+    "show-module-summary",  # Show module summary
+    "special-members",  # Include special members (e.g., __init__)
+    "imported-members",  # Include imported members (if applicable)
+    "no-private-members",  # Exclude private members (optional)
 ]
 
 # autoapi_ignore = [

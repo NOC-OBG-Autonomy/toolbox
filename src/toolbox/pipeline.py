@@ -1,4 +1,4 @@
-"""Base class for all toolbox classes."""
+"""Pipeline Class"""
 
 import yaml
 from steps import create_step, STEP_CLASSES
