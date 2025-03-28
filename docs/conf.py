@@ -54,7 +54,7 @@ todo_include_todos = False
 autoapi_dirs = ["../src/toolbox"]
 autoapi_root = "api"
 
-autoapi_keep_files = True
+autoapi_keep_files = False
 autoapi_options = [
     # "members",
     # "undoc-members",
