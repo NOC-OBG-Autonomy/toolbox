@@ -28,8 +28,9 @@ jobs:
 
       - name: Clean Build Directory
         run: |
-          # Remove the previous build directory if it exists
+          # Remove the previous build and autoapi directory if they exists
           rm -rf docs/_build/
+          rm -rf docs/api/
 
       - name: Build Documentation
         run: |
