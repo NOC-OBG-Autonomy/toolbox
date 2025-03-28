@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#2D2D2D" />
+  
+  <title>Toolbox :: toolbox.utils.diagnostics</title>
+  
+
+  <link rel="icon" type="image/png" sizes="32x32" href="../../../../_static/img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="../../../../_static/img/favicon-16x16.png">
+  <link rel="index" title="Index" href="../../../../genindex.html"/>
+
+  <link rel="stylesheet" href="../../../../_static/css/insegel.css"/>
+  <link rel="stylesheet" href="../../../../_static/css/custom.css"/>
+
+  <script type="text/javascript" id="documentation_options" data-url_root="../../../../" src="../../../../_static/documentation_options.js"></script>
+      <script type="text/javascript" src="../../../../_static/documentation_options.js"></script>
+      <script type="text/javascript" src="../../../../_static/doctools.js"></script>
+      <script type="text/javascript" src="../../../../_static/sphinx_highlight.js"></script>
+      <script type="text/javascript" src="../../../../_static/clipboard.min.js"></script>
+      <script type="text/javascript" src="../../../../_static/copybutton.js"></script>
+      <script type="text/javascript" src="../../../../_static/design-tabs.js"></script>
+      <script type="text/javascript" src="../../../../https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  
+
+  <script src="https://email.tl.fortawesome.com/c/eJxNjUEOgyAQAF8jR7Kw6wIHDh7sP1Cw2mgxgmn6-3JsMqc5zEQfE8dkxOY1KKMUOI3ACFKRJpSW2AAp7ontYIaxI6i7XPJVwyeVfCQ550Os3jLrGSNOLgbdAy6s0PBk2TFNjEbsfq31LB0OnX407pJa5v2faRadwSW63mn5KuLyR9j2tgx3zecanl-55R_-jjPs"></script> 
+</head>
+
+<body>
+  <div id="insegel-container">
+    <header>
+      <div id="logo-container">
+          
+          <h1>Toolbox</h1>
+          
+      </div>
+      <div id="project-container">
+        
+        <h1>Documentation</h1>
+        
+      </div>
+    </header>
+
+    <div id="content-container">
+
+      <div id="main-content-container">
+        <div id="main-content" role="main">
+          
+  <section id="module-toolbox.utils.diagnostics">
+<span id="toolbox-utils-diagnostics"></span><h1>toolbox.utils.diagnostics<a class="headerlink" href="#module-toolbox.utils.diagnostics" title="Link to this heading">¶</a></h1>
+<section id="functions">
+<h2>Functions<a class="headerlink" href="#functions" title="Link to this heading">¶</a></h2>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.plot_time_series" title="toolbox.utils.diagnostics.plot_time_series"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_time_series</span></code></a>(data, x_var, y_var[, title, xlabel, ...])</p></td>
+<td><p>Generates a time series plot for xarray data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.plot_histogram" title="toolbox.utils.diagnostics.plot_histogram"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_histogram</span></code></a>(data, var[, bins, title, xlabel])</p></td>
+<td><p>Generates a histogram for a given variable in xarray data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.plot_boxplot" title="toolbox.utils.diagnostics.plot_boxplot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_boxplot</span></code></a>(data, var[, title, xlabel])</p></td>
+<td><p>Generates a box plot for a given variable in xarray data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.plot_correlation_matrix" title="toolbox.utils.diagnostics.plot_correlation_matrix"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot_correlation_matrix</span></code></a>(data[, variables, title])</p></td>
+<td><p>Generates a heatmap of the correlation matrix for xarray data.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.generate_summary_stats" title="toolbox.utils.diagnostics.generate_summary_stats"><code class="xref py py-obj docutils literal notranslate"><span class="pre">generate_summary_stats</span></code></a>(data, **kwargs)</p></td>
+<td><p>Generate summary statistics for a given dataset (works for both xarray and pandas).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#toolbox.utils.diagnostics.check_missing_values" title="toolbox.utils.diagnostics.check_missing_values"><code class="xref py py-obj docutils literal notranslate"><span class="pre">check_missing_values</span></code></a>(data)</p></td>
+<td><p>Check for missing values in the dataset (works for both xarray and pandas).</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="module-contents">
+<h2>Module Contents<a class="headerlink" href="#module-contents" title="Link to this heading">¶</a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.plot_time_series">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">plot_time_series</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x_var</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_var</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Time</span> <span class="pre">Series</span> <span class="pre">Plot'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlabel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ylabel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#plot_time_series"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.plot_time_series" title="Link to this definition">¶</a></dt>
+<dd><p>Generates a time series plot for xarray data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.plot_histogram">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">plot_histogram</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bins</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">30</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Histogram'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlabel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#plot_histogram"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.plot_histogram" title="Link to this definition">¶</a></dt>
+<dd><p>Generates a histogram for a given variable in xarray data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.plot_boxplot">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">plot_boxplot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">var</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Box</span> <span class="pre">Plot'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">xlabel</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#plot_boxplot"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.plot_boxplot" title="Link to this definition">¶</a></dt>
+<dd><p>Generates a box plot for a given variable in xarray data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.plot_correlation_matrix">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">plot_correlation_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">variables</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">title</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'Correlation</span> <span class="pre">Matrix'</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#plot_correlation_matrix"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.plot_correlation_matrix" title="Link to this definition">¶</a></dt>
+<dd><p>Generates a heatmap of the correlation matrix for xarray data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.generate_summary_stats">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">generate_summary_stats</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#generate_summary_stats"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.generate_summary_stats" title="Link to this definition">¶</a></dt>
+<dd><p>Generate summary statistics for a given dataset (works for both xarray and pandas).</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="toolbox.utils.diagnostics.check_missing_values">
+<span class="sig-prename descclassname"><span class="pre">toolbox.utils.diagnostics.</span></span><span class="sig-name descname"><span class="pre">check_missing_values</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/toolbox/utils/diagnostics.html#check_missing_values"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#toolbox.utils.diagnostics.check_missing_values" title="Link to this definition">¶</a></dt>
+<dd><p>Check for missing values in the dataset (works for both xarray and pandas).</p>
+</dd></dl>
+
+</section>
+</section>
+
+
+        </div>
+      </div>
+
+      <div id="side-menu-container">
+
+        <div id="search" role="search">
+        <form id="rtd-search-form" class="wy-form" action="../../../../search.html" method="get">
+            <input type="text" name="q" placeholder="Search..." />
+            <input type="hidden" name="check_keywords" value="yes" />
+            <input type="hidden" name="area" value="default" />
+        </form>
+</div>
+
+        <div id="side-menu" role="navigation">
+
+          
+  
+    
+  
+  
+    <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="../../../index.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../../index.html">toolbox</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="../../index.html#submodules">Submodules</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../index.html#attributes">Attributes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../index.html#package-contents">Package Contents</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  
+
+
+        </div>
+
+        
+
+      </div>
+
+    </div>
+
+<footer>
+    <div id="footer-info">
+        <ul id="build-details">
+            
+                <li class="footer-element">
+                    
+                </li>
+            
+
+            
+
+            
+        </ul>
+
+        
+            <div id="copyright">
+                &copy; 2025, Adam Ward, National Oceanography Centre
+            </div>
+        
+
+        <div id="credit">
+            created with <a href="http://sphinx-doc.org/">Sphinx</a> and <a href="https://github.com/Autophagy/insegel">Insegel</a>
+
+        </div>
+    </div>
+
+    <a id="menu-toggle" class="fa fa-bars" aria-hidden="true"></a>
+
+    <script type="text/javascript">
+      $("#menu-toggle").click(function() {
+        $("#menu-toggle").toggleClass("toggled");
+        $("#side-menu-container").slideToggle(300);
+      });
+    </script>
+
+</footer> 
+
+</div>
+
+</body>
+</html>

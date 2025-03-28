@@ -27,3 +27,12 @@ toolbox.utils
        !! processed by numpydoc !!
 
 
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 1
+
+   /api/toolbox/utils/diagnostics/index
+
+

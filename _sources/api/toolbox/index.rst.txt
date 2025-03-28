@@ -39,3 +39,23 @@ Submodules
    /api/toolbox/utils/index
 
 
+Attributes
+----------
+
+.. autoapisummary::
+
+   toolbox.__author__
+   toolbox.__credits__
+
+
+Package Contents
+----------------
+
+.. py:data:: __author__
+   :value: 'Adam Ward'
+
+
+.. py:data:: __credits__
+   :value: 'National Oceanography Centre'
+
+
