@@ -17,7 +17,7 @@ class Pipeline:
             with open(config_path, "r") as file:
                 config = yaml.safe_load(file)
             # Add steps from config
-            self.steps = config["pipeline"]["steps"]
+            self.steps = config["steps"]
 
     def add_step(
         self,
@@ -89,7 +89,7 @@ class Pipeline:
         """Generates a visualiation of the pipeline execution"""
         self.graph.clear()
 
-        def add_to_graph(step_config, parent_name=None):
+        def add_to_graph(step_config, parent_name=None, step_order=None):
             step_name = step_config["name"]
             diagnostics = step_config.get("diagnostics", False)
             # ensure graphviz node colourway is clear that diagnostics are enabled
@@ -105,10 +105,22 @@ class Pipeline:
             if parent_name:
                 self.graph.edge(parent_name, step_name)
 
-            for substep in step_config.get("substeps", []):
-                add_to_graph(substep, parent_name=step_name)
+            # Add an edge to show the order/flow of substeps
 
+            if step_order and len(step_order) > 1:
+                for i in range(len(step_order) - 1):
+                    self.graph.edge(step_order[i], step_order[i + 1])
+
+            # Recursively add substeps
+
+            substep_order = []
+            for substep in step_config.get("substeps", []):
+                substep_order.append(substep["name"])
+                add_to_graph(substep, parent_name=step_name, step_order=substep_order)
+
+        # Start by iterating through all top-level steps
         for step in self.steps:
-            add_to_graph(step)
+            step_order = [step["name"]]  # Top-level step order
+            add_to_graph(step, step_order=step_order)
 
         self.graph.render("pipeline_visualisation", view=True)

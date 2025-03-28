@@ -1,0 +1,27 @@
+# Pipeline Configuration
+pipeline:
+  name: "Data Processing Pipeline"
+  description: "A pipeline for processing and analyzing multi-dimensional data"
+
+# Steps in the pipeline
+steps:
+  - name: "Load OG1"
+    parameters:
+      file_path: "/home/adamwa/Ocean Informatics/Projects/toolbox/examples/data/OG1/ALR_4_649_R.nc"  # Path to the input NetCDF file
+      diagnostics: true  # Enable diagnostics 
+  
+  - name: "Factory Calibration"
+    parameters:
+      diagnostics: false 
+
+  - name: "Data Export"
+    parameters:
+      export_format: "OG1"  # Define the export format (e.g., OG1, CSV, etc.)
+      output_path: "/path/to/exported_data"
+    diagnostics: false  # Disable diagnostics for export step
+
+# Optional custom settings for the pipeline
+settings:
+  run_mode: "interactive"  # Set the pipeline to run in interactive mode
+  max_concurrent_steps: 2   # Allow 2 steps to run concurrently
+  logging_level: "INFO"     # Define logging level for the pipeline (DEBUG, INFO, WARN, ERROR)
