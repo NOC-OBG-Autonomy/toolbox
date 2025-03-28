@@ -9,11 +9,14 @@ class Pipeline:
     def __init__(self, config_path=None):
         """Initialize pipeline with optional config file"""
         self.steps = []
+        # Define the graph for visualiation
         self.graph = Digraph("Pipeline", format="png", graph_attr={"rankdir": "TB"})
 
         if config_path:
+            # Load pipeline configuration from file
             with open(config_path, "r") as file:
                 config = yaml.safe_load(file)
+            # Add steps from config
             self.steps = config["pipeline"]["steps"]
 
     def add_step(
@@ -26,6 +29,7 @@ class Pipeline:
     ):
         """Dynamically adds a step and optionally runs it immediately"""
         if step_name not in STEP_CLASSES:
+            # Check if the step is recognised
             raise ValueError(f"Step '{step_name}' is not recognized.")
 
         step_config = {
@@ -36,6 +40,7 @@ class Pipeline:
         }
 
         if parent_name:
+            # Add step as a substep of a parent if it exists
             parent = self._find_step(self.steps, parent_name)
             if parent:
                 parent["substeps"].append(step_config)
@@ -80,14 +85,14 @@ class Pipeline:
         for step in self.steps:
             self.execute_step(step)
 
-    def visualize_pipeline(self):
-        """Generates a visualization of the pipeline execution"""
+    def visualise_pipeline(self):
+        """Generates a visualiation of the pipeline execution"""
         self.graph.clear()
 
         def add_to_graph(step_config, parent_name=None):
             step_name = step_config["name"]
             diagnostics = step_config.get("diagnostics", False)
-
+            # ensure graphviz node colourway is clear that diagnostics are enabled
             color = "red" if diagnostics else "black"
             self.graph.node(
                 step_name,
@@ -106,4 +111,4 @@ class Pipeline:
         for step in self.steps:
             add_to_graph(step)
 
-        self.graph.render("pipeline_visualization", view=True)
+        self.graph.render("pipeline_visualisation", view=True)
