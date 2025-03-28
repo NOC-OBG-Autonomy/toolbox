@@ -31,6 +31,7 @@ jobs:
           # Remove the previous build and autoapi directory if they exists
           rm -rf docs/_build/
           rm -rf docs/api/
+          ls . 
 
       - name: Build Documentation
         run: |
