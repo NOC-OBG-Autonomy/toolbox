@@ -24,12 +24,3 @@ If you're looking for detailed API documentation, you can find it in the [API re
 Contributing
 ------------
 Interested in contributing? Please read our [Contributing Guidelines](contributing.html) to find out how you can contribute to Toolbox.
-
-Quick Links
------------
-- [Installation Guide](installation.html)
-- [Usage Examples](usage.html)
-- [API Documentation](api/index.html)
-- [Contributing Guidelines](contributing.html)
-
-For more detailed information about reStructuredText syntax, check out the `reStructuredText documentation <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`.
