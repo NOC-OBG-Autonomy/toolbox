@@ -1,15 +1,14 @@
 {
   "api/index": [],
-  "api/toolbox/config/data_params/index": [],
-  "api/toolbox/config/index": [],
-  "api/toolbox/config/variableQC/index": [],
-  "api/toolbox/config/variableQC/salinity_params/index": [],
-  "api/toolbox/config/variableQC/temperature_params/index": [],
-  "api/toolbox/config/variable_params/index": [],
   "api/toolbox/index": [],
-  "api/toolbox/toolbox/index": [],
-  "api/toolbox/utils/OG1_io/index": [],
-  "api/toolbox/utils/dynamic_classes/index": [],
+  "api/toolbox/main/index": [],
+  "api/toolbox/pipeline/index": [],
+  "api/toolbox/steps/custom/calibration/index": [],
+  "api/toolbox/steps/custom/export/index": [],
+  "api/toolbox/steps/custom/index": [],
+  "api/toolbox/steps/custom/load_data/index": [],
+  "api/toolbox/steps/custom/qc/index": [],
+  "api/toolbox/steps/index": [],
   "api/toolbox/utils/index": [],
   "index": []
 }

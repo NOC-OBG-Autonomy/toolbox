@@ -27,13 +27,3 @@ toolbox.utils
        !! processed by numpydoc !!
 
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 1
-
-   /api/toolbox/utils/OG1_io/index
-   /api/toolbox/utils/dynamic_classes/index
-
-

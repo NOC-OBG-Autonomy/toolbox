@@ -33,8 +33,9 @@ Submodules
 .. toctree::
    :maxdepth: 1
 
-   /api/toolbox/config/index
-   /api/toolbox/toolbox/index
+   /api/toolbox/main/index
+   /api/toolbox/pipeline/index
+   /api/toolbox/steps/index
    /api/toolbox/utils/index
 
 
