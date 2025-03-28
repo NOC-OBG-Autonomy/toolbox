@@ -18,7 +18,7 @@ release = version + "a"
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
-    # "sphinx.ext.autodoc",
+    "sphinx.ext.autodoc",
     "sphinx.ext.coverage",
     "sphinx.ext.doctest",
     "sphinx.ext.intersphinx",
@@ -76,6 +76,11 @@ autoapi_options = [
 #
 # html_theme = "sphinx_rtd_theme"
 html_theme = "insegel"
+html_theme_options = {
+    "collapse_navigation": False,  # Make sure the sidebar is always expanded
+    "display_version": True,  # Show version number in sidebar
+    "sticky_navigation": True,  # Keep the navigation sticky when scrolling
+}
 html_baseurl = "https://noc-obg-autonomy.github.io/toolbox/"
 html_static_path = ["_static"]
 
