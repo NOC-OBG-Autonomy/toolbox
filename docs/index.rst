@@ -1,10 +1,5 @@
 Toolbox Documentation
 ======================
-Welcome to Toolbox, a powerful tool for [describe functionality]! Whether you're just getting started or need in-depth information, this documentation has you covered.
-
-Getting Started
----------------
-The first thing you'll want to do is [Install Toolbox](installation.html). After installation, head over to the [Usage](usage.html) section to learn how to use Toolbox effectively. You’ll find useful examples and explanations there.
 
 Contents
 --------
