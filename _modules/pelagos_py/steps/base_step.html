@@ -415,9 +415,12 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.config_mirror</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigMirrorMixin</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parameter_spec</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.log_levels</span><span class="w"> </span><span class="kn">import</span> <span class="n">STOP</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">parameter_spec</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.log_levels</span><span class="w"> </span><span class="kn">import</span> <span class="n">STOP</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
 <div class="viewcode-block" id="REGISTERED_STEPS">
@@ -507,6 +510,10 @@
         <span class="c1"># the reported time/RAM cover the processing only (not a blocking plot).</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_wrap_diagnostics_timing</span><span class="p">()</span>
 
+        <span class="c1"># Stop the diagnostics timer as soon as diagnostics generation begins, so</span>
+        <span class="c1"># the reported time/RAM cover the processing only (not a blocking plot).</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_wrap_diagnostics_timing</span><span class="p">()</span>
+
         <span class="c1"># Continue method resolution order</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
@@ -522,6 +529,16 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">parameter_spec</span><span class="o">.</span><span class="n">describe</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">parameter_schema</span> <span class="ow">or</span> <span class="p">{})</span></div>
 
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">describe_parameters</span><span class="p">(</span><span class="bp">cls</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return a JSON-serialisable description of this step&#39;s parameters.</span>
+
+<span class="sd">        Introspection surface for external tools (e.g. a dashboard) that need to</span>
+<span class="sd">        render a parameter form without instantiating the step. See</span>
+<span class="sd">        :func:`pelagos_py.utils.parameter_spec.describe`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">parameter_spec</span><span class="o">.</span><span class="n">describe</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">parameter_schema</span> <span class="ow">or</span> <span class="p">{})</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -628,6 +645,21 @@
                 <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="BaseStep.halt">
+<a class="viewcode-back" href="../../../api/pelagos_py/steps/base_step/index.html#pelagos_py.steps.base_step.BaseStep.halt">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">halt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">message</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Stop the pipeline cleanly for an unrecoverable misconfiguration.</span>
+
+<span class="sd">        Logs ``message`` (the detail and any fix/install hint) at ERROR level,</span>
+<span class="sd">        then a terminal STOP line marking the deliberate halt, and exits. Use</span>
+<span class="sd">        this instead of raising for config problems discovered at run time, so</span>
+<span class="sd">        the user sees one actionable error rather than a wrapped traceback.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;[</span><span class="si">%s</span><span class="s2">] </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">message</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">STOP</span><span class="p">,</span> <span class="s2">&quot;Pipeline stopped at step &#39;</span><span class="si">%s</span><span class="s2">&#39;.&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span></div>
 
 
     <span class="c1"># ----------- Config Handling -----------</span>

@@ -411,14 +411,114 @@
 <span class="c1"># See the License for the specific language governing permissions and</span>
 <span class="c1"># limitations under the License.</span>
 
-<span class="sd">&quot;&quot;&quot;Checks the format of the file and returns the results to a written file.&quot;&quot;&quot;</span>
+<span class="sd">&quot;&quot;&quot;Checks the format of a file against OG1/CF standards and reports the result.</span>
+
+<span class="sd">A short pass/fail summary is always logged to the console. Full detail is only</span>
+<span class="sd">written to disk when the user asks for it (``output_type``) and an</span>
+<span class="sd">``out_directory`` is configured.</span>
+<span class="sd">&quot;&quot;&quot;</span>
 
 <span class="c1">#### Mandatory imports ####</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.steps.base_step</span><span class="w"> </span><span class="kn">import</span> <span class="n">BaseStep</span><span class="p">,</span> <span class="n">register_step</span>
 
 <span class="c1">#### Custom imports ####</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">compliance_checker.runner</span><span class="w"> </span><span class="kn">import</span> <span class="n">ComplianceChecker</span><span class="p">,</span> <span class="n">CheckSuite</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">compliance_checker.runner</span><span class="w"> </span><span class="kn">import</span> <span class="n">ComplianceChecker</span><span class="p">,</span> <span class="n">CheckSuite</span><span class="p">,</span> <span class="n">stdout_redirector</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="c1">#: The compliance checker&#39;s strictness levels map to integer score limits;</span>
+<span class="c1">#: &quot;lenient&quot; keeps every priority (1=high … 3=low) in the report.</span>
+<span class="n">_LENIENT_LIMIT</span> <span class="o">=</span> <span class="mi">3</span>
+
+<span class="c1">#: A missing global attribute / variable reads e.g. &quot;Global attribute X is</span>
+<span class="c1">#: missing&quot; or &quot;Variable X is missing&quot;; pull out the bare name for the summary.</span>
+<span class="n">_MISSING_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\b(?:attribute|Variable)\s+([A-Za-z0-9_]+)\s+is missing&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_named</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="o">*</span><span class="n">keywords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether a check entry&#39;s name contains all the given keywords.&quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;name&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">return</span> <span class="nb">all</span><span class="p">(</span><span class="n">k</span> <span class="ow">in</span> <span class="n">name</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">keywords</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_named_check</span><span class="p">(</span><span class="n">priorities</span><span class="p">,</span> <span class="o">*</span><span class="n">keywords</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return the ``msgs`` of the first check whose name contains all keywords.</span>
+
+<span class="sd">    Used to locate the OG1 &quot;mandatory global attributes&quot;/&quot;mandatory variables&quot;</span>
+<span class="sd">    checks by substring. Returns ``None`` when no such check ran (e.g. a checker</span>
+<span class="sd">    that does not define it), which the caller distinguishes from &quot;ran, none</span>
+<span class="sd">    missing&quot; (an empty list).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">priorities</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">_is_named</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="o">*</span><span class="n">keywords</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;msgs&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_missing_names</span><span class="p">(</span><span class="n">msgs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pull the bare attribute/variable names out of &quot;... is missing&quot; messages.&quot;&quot;&quot;</span>
+    <span class="n">names</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">msg</span> <span class="ow">in</span> <span class="n">msgs</span> <span class="ow">or</span> <span class="p">[]:</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">_MISSING_RE</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="n">msg</span><span class="p">)</span>
+        <span class="n">names</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">match</span> <span class="k">else</span> <span class="n">msg</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">names</span>
+
+
+<div class="viewcode-block" id="console_summary">
+<a class="viewcode-back" href="../../../../api/pelagos_py/steps/input_output/format_check/index.html#pelagos_py.steps.input_output.format_check.console_summary">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">console_summary</span><span class="p">(</span><span class="n">checker_name</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">passed</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Build a compact console summary for one checker&#39;s result.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    checker_name : str</span>
+<span class="sd">        The checker that produced ``result`` (e.g. ``&quot;og&quot;``).</span>
+<span class="sd">    result : dict</span>
+<span class="sd">        A single checker&#39;s :meth:`CheckSuite.dict_output` dict.</span>
+<span class="sd">    passed : bool</span>
+<span class="sd">        Whether the dataset passed this checker at the chosen strictness.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    list of str</span>
+<span class="sd">        Lines to log. Kept deliberately short: a pass/fail header, the missing</span>
+<span class="sd">        mandatory global attributes and variables, then a count of everything</span>
+<span class="sd">        else so the console is not flooded with detail (that goes to the file).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">priorities</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;all_priorities&quot;</span><span class="p">,</span> <span class="p">[])</span>
+    <span class="n">scored</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;scored_points&quot;</span><span class="p">)</span>
+    <span class="n">possible</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;possible_points&quot;</span><span class="p">)</span>
+
+    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">checker_name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="s1">&#39;PASS&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">passed</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;FAIL&#39;</span><span class="si">}</span><span class="s2"> — score </span><span class="si">{</span><span class="n">scored</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">possible</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">]</span>
+
+    <span class="n">global_attrs</span> <span class="o">=</span> <span class="n">_named_check</span><span class="p">(</span><span class="n">priorities</span><span class="p">,</span> <span class="s2">&quot;mandatory&quot;</span><span class="p">,</span> <span class="s2">&quot;global attribute&quot;</span><span class="p">)</span>
+    <span class="n">variables</span> <span class="o">=</span> <span class="n">_named_check</span><span class="p">(</span><span class="n">priorities</span><span class="p">,</span> <span class="s2">&quot;mandatory&quot;</span><span class="p">,</span> <span class="s2">&quot;variable&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">global_attrs</span><span class="p">:</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">_missing_names</span><span class="p">(</span><span class="n">global_attrs</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;  Mandatory global attributes missing (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+    <span class="k">if</span> <span class="n">variables</span><span class="p">:</span>
+        <span class="n">names</span> <span class="o">=</span> <span class="n">_missing_names</span><span class="p">(</span><span class="n">variables</span><span class="p">)</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;  Mandatory variables missing (</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="si">}</span><span class="s2">): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">names</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Everything else is summarised as a count only, to keep the console terse.</span>
+    <span class="n">other</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span>
+        <span class="nb">len</span><span class="p">(</span><span class="n">entry</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;msgs&quot;</span><span class="p">,</span> <span class="p">[]))</span>
+        <span class="k">for</span> <span class="n">entry</span> <span class="ow">in</span> <span class="n">priorities</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">_is_named</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="s2">&quot;mandatory&quot;</span><span class="p">,</span> <span class="s2">&quot;global attribute&quot;</span><span class="p">)</span>
+        <span class="ow">and</span> <span class="ow">not</span> <span class="n">_is_named</span><span class="p">(</span><span class="n">entry</span><span class="p">,</span> <span class="s2">&quot;mandatory&quot;</span><span class="p">,</span> <span class="s2">&quot;variable&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="k">if</span> <span class="n">other</span><span class="p">:</span>
+        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  + </span><span class="si">{</span><span class="n">other</span><span class="si">}</span><span class="s2"> other issue(s) not shown&quot;</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">lines</span></div>
+
 
 
 <span class="nd">@register_step</span>
@@ -426,24 +526,34 @@
 <a class="viewcode-back" href="../../../../api/pelagos_py/steps/input_output/format_check/index.html#pelagos_py.steps.input_output.format_check.FormatCheck">[docs]</a>
 <span class="k">class</span><span class="w"> </span><span class="nc">FormatCheck</span><span class="p">(</span><span class="n">BaseStep</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Runs IOOS file format compliance checker and produces results file for reporting purposes.</span>
+<span class="sd">    Run the IOOS file-format compliance checker and report the result.</span>
 
-<span class="sd">    Does not run directly on a dataset, follows own import/loading routines.</span>
+<span class="sd">    Does not run on the in-memory dataset; it re-reads the file from disk</span>
+<span class="sd">    (its own loading routine). A short pass/fail summary is always printed to</span>
+<span class="sd">    the console. JSON and/or RST report files are written only when requested</span>
+<span class="sd">    via ``output_type`` and an ``out_directory`` is set.</span>
 
 <span class="sd">    Parameters</span>
 <span class="sd">    ----------</span>
-<span class="sd">    src : path or str</span>
-<span class="sd">        The path to the source file.</span>
+<span class="sd">    src : path or str, optional</span>
+<span class="sd">        File to check. If omitted, falls back to the file loaded by a preceding</span>
+<span class="sd">        ``Load OG1`` step.</span>
 <span class="sd">    standards : list of str</span>
-<span class="sd">        A list of the standards to be tested. For example, [&#39;cf&#39;, &#39;og&#39;]</span>
+<span class="sd">        Standards to check, e.g. ``[&#39;cf&#39;, &#39;og&#39;]`` (``og`` = OG1).</span>
+<span class="sd">    output_type : str or list of str, optional</span>
+<span class="sd">        Report file(s) to save *in addition to* the console summary: ``&#39;json&#39;``,</span>
+<span class="sd">        ``&#39;rst&#39;``, or a list of both. Omit (default) for console only. Saving</span>
+<span class="sd">        requires ``out_directory`` to be set in the pipeline config.</span>
+<span class="sd">    proceed_on_fail : bool</span>
+<span class="sd">        If False, halt the pipeline when the file fails the checks.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">step_name</span> <span class="o">=</span> <span class="s2">&quot;Format Checker&quot;</span>
 
     <span class="n">parameter_schema</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;src&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-            <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Source file path to run the compliance checker against.&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;File to check. If omitted, falls back to the file loaded by a preceding &#39;Load OG1&#39; step.&quot;</span><span class="p">,</span>
         <span class="p">},</span>
         <span class="s2">&quot;standards&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
@@ -451,9 +561,11 @@
             <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Standards to check, e.g. [&#39;cf&#39;, &#39;og&#39;].&quot;</span><span class="p">,</span>
         <span class="p">},</span>
         <span class="s2">&quot;output_type&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-            <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="s2">&quot;rst&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Output extension: &#39;json&#39; for detail, &#39;rst&#39;/ASCII for a summary.&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">list</span><span class="p">],</span>
+            <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;console&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;console&quot;</span><span class="p">,</span> <span class="s2">&quot;json&quot;</span><span class="p">,</span> <span class="s2">&quot;rst&quot;</span><span class="p">],</span>
+            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Outputs to produce: &#39;console&#39; for the in-log detail summary, &quot;</span>
+            <span class="s2">&quot;&#39;json&#39;/&#39;rst&#39; to also save a report file. Default [&#39;console&#39;]. Saving files requires out_directory.&quot;</span><span class="p">,</span>
         <span class="p">},</span>
         <span class="s2">&quot;proceed_on_fail&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -462,47 +574,142 @@
         <span class="p">},</span>
     <span class="p">}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="c1">#: Recognised entries for ``output_type``.</span>
+    <span class="n">_OUTPUT_OPTIONS</span> <span class="o">=</span> <span class="p">(</span><span class="s2">&quot;console&quot;</span><span class="p">,</span> <span class="s2">&quot;json&quot;</span><span class="p">,</span> <span class="s2">&quot;rst&quot;</span><span class="p">)</span>
 
+    <span class="k">def</span><span class="w"> </span><span class="nf">_resolve_outputs</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Normalise ``output_type`` to a list drawn from {&#39;console&#39;, &#39;json&#39;, &#39;rst&#39;}.</span>
+
+<span class="sd">        Accepts a single string or a list; unrecognised entries are dropped. The</span>
+<span class="sd">        overall result header is always logged regardless of this selection.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">raw</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_type&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">raw</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">values</span> <span class="o">=</span> <span class="p">[</span><span class="n">raw</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">raw</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">raw</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">[</span><span class="n">v</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">values</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">and</span> <span class="n">v</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_OUTPUT_OPTIONS</span><span class="p">]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="n">check_suite</span> <span class="o">=</span> <span class="n">CheckSuite</span><span class="p">()</span>
         <span class="n">check_suite</span><span class="o">.</span><span class="n">load_all_available_checkers</span><span class="p">()</span>
 
-        <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;src&quot;</span><span class="p">)</span>
+        <span class="c1">#   Fall back to the file loaded by a preceding Load OG1 step when no src is given.</span>
+        <span class="n">src</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;src&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;source_file&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">src</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">halt</span><span class="p">(</span>
+                <span class="s2">&quot;No file to check. Provide a &#39;src&#39; path in the config, &quot;</span>
+                <span class="s2">&quot;or place this step after a &#39;Load OG1&#39; step so it can reuse that file.&quot;</span>
+            <span class="p">)</span>
+
         <span class="n">cnames</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;standards&quot;</span><span class="p">)</span>
 
-        <span class="c1">#   If ran after loading data, the filename stem should be saved in the global pipeline params</span>
-        <span class="n">fname</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filename_core&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">Path</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;*.nc&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">stem</span>
-        <span class="n">ext</span>   <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;output_type&quot;</span><span class="p">)</span>
-        <span class="n">f_out</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">][</span><span class="s2">&quot;out_directory&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">fname</span> <span class="o">+</span> <span class="s2">&quot;_check.&quot;</span> <span class="o">+</span> <span class="n">ext</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">][</span><span class="s2">&quot;cc_file&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">f_out</span>    <span class="c1">#   Save in case of reporting.</span>
-
-        <span class="c1">#   After naming the file accordingly, change to &quot;text&quot; for ASCII formats</span>
-        <span class="k">if</span> <span class="n">ext</span> <span class="o">!=</span> <span class="s2">&quot;json&quot;</span><span class="p">:</span>
-            <span class="n">ext</span> <span class="o">=</span> <span class="s2">&quot;text&quot;</span>
-
-        <span class="c1">#   return_value: True if passes specified checks. errors: True if there were any errors running the CC.</span>
-        <span class="n">return_value</span><span class="p">,</span> <span class="n">errors</span> <span class="o">=</span> <span class="n">ComplianceChecker</span><span class="o">.</span><span class="n">run_checker</span><span class="p">(</span>
-            <span class="n">src</span><span class="p">,</span>
-            <span class="n">checker_names</span> <span class="o">=</span> <span class="n">cnames</span><span class="p">,</span>
-            <span class="n">verbose</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
-            <span class="n">criteria</span> <span class="o">=</span> <span class="s2">&quot;lenient&quot;</span><span class="p">,</span>
-            <span class="n">output_filename</span> <span class="o">=</span> <span class="n">f_out</span><span class="p">,</span>
-            <span class="n">output_format</span> <span class="o">=</span> <span class="n">ext</span><span class="p">,</span>
-        <span class="p">)</span>
-
-        <span class="k">if</span> <span class="n">return_value</span> <span class="o">==</span> <span class="kc">False</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">log_warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;File </span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2"> did not pass the file format compliance checker. See the outfile (</span><span class="si">{</span><span class="n">f_out</span><span class="si">}</span><span class="s2">).&quot;</span>
+        <span class="c1">#   Each requested standard is served by a compliance-checker plugin; a name with</span>
+        <span class="c1">#   no installed plugin would otherwise surface as an opaque library traceback.</span>
+        <span class="n">available</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;:&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">checkers</span><span class="p">}</span>
+        <span class="n">missing</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cnames</span> <span class="k">if</span> <span class="n">c</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">available</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">missing</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">halt</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Compliance standard(s) </span><span class="si">{</span><span class="n">missing</span><span class="si">}</span><span class="s2"> are not installed. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Available: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">available</span><span class="p">))</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;(none)&#39;</span><span class="si">}</span><span class="s2">. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Install the matching plugin (e.g. &#39;pip install cc-plugin-og&#39; for &#39;og&#39;).&quot;</span>
             <span class="p">)</span>
-            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;proceed_on_fail&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="kc">False</span><span class="p">:</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;Halting pipeline, &#39;proceed on fail&#39; parameter from config is set to False.&quot;</span><span class="p">)</span>
-                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Compliance check step failed. Check input files and log for details.&quot;</span><span class="p">)</span>
 
-        <span class="k">if</span> <span class="n">errors</span><span class="p">:</span>
+        <span class="c1">#   Resolve outputs: &#39;console&#39; toggles the detail log; &#39;json&#39;/&#39;rst&#39; save files.</span>
+        <span class="n">outputs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_resolve_outputs</span><span class="p">()</span>
+        <span class="n">console_on</span> <span class="o">=</span> <span class="s2">&quot;console&quot;</span> <span class="ow">in</span> <span class="n">outputs</span>
+        <span class="n">save_formats</span> <span class="o">=</span> <span class="p">[</span><span class="n">fmt</span> <span class="k">for</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="n">outputs</span> <span class="k">if</span> <span class="n">fmt</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;json&quot;</span><span class="p">,</span> <span class="s2">&quot;rst&quot;</span><span class="p">)]</span>
+
+        <span class="n">out_dir</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;out_directory&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">save_formats</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">out_dir</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">log_warn</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;Errors occurred when running the file format compliance checker. See the outfile (</span><span class="si">{</span><span class="n">f_out</span><span class="si">}</span><span class="s2">).&quot;</span><span class="p">)</span>
+                <span class="s2">&quot;No &#39;out_directory&#39; set in the pipeline config — cannot save report file(s). &quot;</span>
+                <span class="s2">&quot;Add &#39;out_directory&#39;, or remove &#39;json&#39;/&#39;rst&#39; from output_type.&quot;</span>
+            <span class="p">)</span>
+            <span class="n">save_formats</span> <span class="o">=</span> <span class="p">[]</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span></div>
+        <span class="c1">#   If run after loading data, the filename stem is saved in the global pipeline params.</span>
+        <span class="n">fname</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">,</span> <span class="p">{})</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;filename_core&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">Path</span><span class="p">(</span><span class="n">src</span><span class="o">.</span><span class="n">strip</span><span class="p">(</span><span class="s2">&quot;*.nc&quot;</span><span class="p">))</span><span class="o">.</span><span class="n">stem</span>
+
+        <span class="c1">#   Run every requested checker once; reuse the results for the summary + files.</span>
+        <span class="n">ds</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">load_dataset</span><span class="p">(</span><span class="n">src</span><span class="p">)</span>
+        <span class="n">score_groups</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">run_all</span><span class="p">(</span><span class="n">ds</span><span class="p">,</span> <span class="n">cnames</span><span class="p">)</span>
+        <span class="n">score_dict</span> <span class="o">=</span> <span class="p">{</span><span class="n">src</span><span class="p">:</span> <span class="n">score_groups</span><span class="p">}</span>
+
+        <span class="c1">#   Gather a short per-checker summary; track the overall pass/fail.</span>
+        <span class="n">overall_pass</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="n">summary_lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">checker_name</span><span class="p">,</span> <span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">_errors</span><span class="p">)</span> <span class="ow">in</span> <span class="n">score_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">passed</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">passtree</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">_LENIENT_LIMIT</span><span class="p">)</span>
+            <span class="n">overall_pass</span> <span class="o">=</span> <span class="n">overall_pass</span> <span class="ow">and</span> <span class="n">passed</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">dict_output</span><span class="p">(</span><span class="n">checker_name</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">_LENIENT_LIMIT</span><span class="p">)</span>
+            <span class="n">summary_lines</span> <span class="o">+=</span> <span class="n">console_summary</span><span class="p">(</span><span class="n">checker_name</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
+
+        <span class="c1">#   Write the detailed report file(s), if requested and possible.</span>
+        <span class="n">saved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_reports</span><span class="p">(</span><span class="n">check_suite</span><span class="p">,</span> <span class="n">score_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">save_formats</span><span class="p">)</span>
+
+        <span class="c1">#   --- Log 1: overall result (WARNING on fail, INFO on pass). Always emitted.</span>
+        <span class="n">header</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2">&#39; </span><span class="si">{</span><span class="s1">&#39;passed&#39;</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">overall_pass</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="s1">&#39;FAILED&#39;</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;format compliance check(s): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">cnames</span><span class="p">)</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+        <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">log</span> <span class="k">if</span> <span class="n">overall_pass</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">log_warn</span><span class="p">)(</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="c1">#   --- Log 2: the detail summary, only when &#39;console&#39; is selected.</span>
+        <span class="k">if</span> <span class="n">console_on</span><span class="p">:</span>
+            <span class="n">detail</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">summary_lines</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">ComplianceChecker</span><span class="o">.</span><span class="n">check_errors</span><span class="p">(</span><span class="n">score_groups</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+                <span class="n">detail</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;! Errors occurred while running the checker — see a saved report.&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="s2">&quot;Summary:</span><span class="se">\n</span><span class="s2">&quot;</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">line</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">detail</span><span class="p">))</span>
+
+        <span class="c1">#   --- Log 3: where the full detail lives, or how to save it.</span>
+        <span class="k">if</span> <span class="n">saved</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="s2">&quot;  &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">fmt</span><span class="o">.</span><span class="n">upper</span><span class="p">()</span><span class="si">}</span><span class="s2"> report saved to: </span><span class="si">{</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">for</span> <span class="n">fmt</span><span class="p">,</span> <span class="n">path</span> <span class="ow">in</span> <span class="n">saved</span><span class="o">.</span><span class="n">items</span><span class="p">())</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">(</span>
+                <span class="s2">&quot;Add &#39;json&#39; or &#39;rst&#39; to output_type (with an out_directory) to save a full report.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">overall_pass</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;proceed_on_fail&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="kc">False</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">halt</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">fname</span><span class="si">}</span><span class="s2">&#39; failed the format compliance checks and &#39;proceed_on_fail&#39; is False.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_write_reports</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">check_suite</span><span class="p">,</span> <span class="n">score_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">save_formats</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Write the requested report file(s) and record one for the report step.</span>
+
+<span class="sd">        Returns a ``{format: path}`` dict of what was written (empty for</span>
+<span class="sd">        console-only). When both are written, the JSON path is registered as the</span>
+<span class="sd">        ``cc_file`` the data report embeds, since it is the richer source.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">save_formats</span><span class="p">:</span>
+            <span class="k">return</span> <span class="p">{}</span>
+
+        <span class="n">base</span> <span class="o">=</span> <span class="n">out_dir</span> <span class="o">+</span> <span class="n">fname</span> <span class="o">+</span> <span class="s2">&quot;_check&quot;</span>
+        <span class="n">saved</span> <span class="o">=</span> <span class="p">{}</span>
+
+        <span class="k">if</span> <span class="s2">&quot;json&quot;</span> <span class="ow">in</span> <span class="n">save_formats</span><span class="p">:</span>
+            <span class="n">json_path</span> <span class="o">=</span> <span class="n">base</span> <span class="o">+</span> <span class="s2">&quot;.json&quot;</span>
+            <span class="n">ComplianceChecker</span><span class="o">.</span><span class="n">json_output</span><span class="p">(</span>
+                <span class="n">check_suite</span><span class="p">,</span> <span class="n">score_dict</span><span class="p">,</span> <span class="n">json_path</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">score_dict</span><span class="p">),</span> <span class="n">_LENIENT_LIMIT</span>
+            <span class="p">)</span>
+            <span class="n">saved</span><span class="p">[</span><span class="s2">&quot;json&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">json_path</span>
+
+        <span class="k">if</span> <span class="s2">&quot;rst&quot;</span> <span class="ow">in</span> <span class="n">save_formats</span><span class="p">:</span>
+            <span class="n">rst_path</span> <span class="o">=</span> <span class="n">base</span> <span class="o">+</span> <span class="s2">&quot;.rst&quot;</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">rst_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="k">with</span> <span class="n">stdout_redirector</span><span class="p">(</span><span class="n">f</span><span class="p">):</span>
+                    <span class="n">ComplianceChecker</span><span class="o">.</span><span class="n">stdout_output</span><span class="p">(</span>
+                        <span class="n">check_suite</span><span class="p">,</span> <span class="n">score_dict</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">_LENIENT_LIMIT</span>
+                    <span class="p">)</span>
+            <span class="n">saved</span><span class="p">[</span><span class="s2">&quot;rst&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">rst_path</span>
+
+        <span class="c1">#   Prefer JSON for the data report (structured); fall back to RST.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">][</span><span class="s2">&quot;cc_file&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">saved</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;json&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">saved</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;rst&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">saved</span></div>
 
 </pre></div>
 

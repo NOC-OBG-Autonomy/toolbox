@@ -516,6 +516,16 @@ render a parameter form without instantiating the step. See
 </dd></dl>
 
 <dl class="py method">
+<dt class="sig sig-object py" id="pelagos_py.steps.base_step.BaseStep.halt">
+<span class="sig-name descname"><span class="pre">halt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">message</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/steps/base_step.html#BaseStep.halt"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.steps.base_step.BaseStep.halt" title="Link to this definition">#</a></dt>
+<dd><p>Stop the pipeline cleanly for an unrecoverable misconfiguration.</p>
+<p>Logs <code class="docutils literal notranslate"><span class="pre">message</span></code> (the detail and any fix/install hint) at ERROR level,
+then a terminal STOP line marking the deliberate halt, and exits. Use
+this instead of raising for config problems discovered at run time, so
+the user sees one actionable error rather than a wrapped traceback.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="pelagos_py.steps.base_step.BaseStep.update_parameters">
 <span class="sig-name descname"><span class="pre">update_parameters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/steps/base_step.html#BaseStep.update_parameters"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.steps.base_step.BaseStep.update_parameters" title="Link to this definition">#</a></dt>
 <dd><p>Update parameter values both in attributes and in private store.</p>
@@ -571,6 +581,7 @@ render a parameter form without instantiating the step. See
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.log"><code class="docutils literal notranslate"><span class="pre">BaseStep.log()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.log_warn"><code class="docutils literal notranslate"><span class="pre">BaseStep.log_warn()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.check_data"><code class="docutils literal notranslate"><span class="pre">BaseStep.check_data()</span></code></a></li>
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.halt"><code class="docutils literal notranslate"><span class="pre">BaseStep.halt()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.update_parameters"><code class="docutils literal notranslate"><span class="pre">BaseStep.update_parameters()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.generate_config"><code class="docutils literal notranslate"><span class="pre">BaseStep.generate_config()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.base_step.BaseStep.save_config"><code class="docutils literal notranslate"><span class="pre">BaseStep.save_config()</span></code></a></li>
