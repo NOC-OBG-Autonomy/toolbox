@@ -638,11 +638,17 @@
         <span class="c1">#   Gather a short per-checker summary; track the overall pass/fail.</span>
         <span class="n">overall_pass</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="n">summary_lines</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="n">cc_results</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">checker_name</span><span class="p">,</span> <span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">_errors</span><span class="p">)</span> <span class="ow">in</span> <span class="n">score_groups</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
             <span class="n">passed</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">passtree</span><span class="p">(</span><span class="n">groups</span><span class="p">,</span> <span class="n">_LENIENT_LIMIT</span><span class="p">)</span>
             <span class="n">overall_pass</span> <span class="o">=</span> <span class="n">overall_pass</span> <span class="ow">and</span> <span class="n">passed</span>
             <span class="n">result</span> <span class="o">=</span> <span class="n">check_suite</span><span class="o">.</span><span class="n">dict_output</span><span class="p">(</span><span class="n">checker_name</span><span class="p">,</span> <span class="n">groups</span><span class="p">,</span> <span class="n">src</span><span class="p">,</span> <span class="n">_LENIENT_LIMIT</span><span class="p">)</span>
             <span class="n">summary_lines</span> <span class="o">+=</span> <span class="n">console_summary</span><span class="p">(</span><span class="n">checker_name</span><span class="p">,</span> <span class="n">result</span><span class="p">,</span> <span class="n">passed</span><span class="p">)</span>
+            <span class="n">cc_results</span><span class="p">[</span><span class="n">checker_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">result</span>
+
+        <span class="c1">#   Stash the structured results so the data report can render a Format</span>
+        <span class="c1">#   Checker section regardless of whether a report file was saved.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;cc_results&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">cc_results</span>
 
         <span class="c1">#   Write the detailed report file(s), if requested and possible.</span>
         <span class="n">saved</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_write_reports</span><span class="p">(</span><span class="n">check_suite</span><span class="p">,</span> <span class="n">score_dict</span><span class="p">,</span> <span class="n">out_dir</span><span class="p">,</span> <span class="n">fname</span><span class="p">,</span> <span class="n">save_formats</span><span class="p">)</span>

@@ -556,11 +556,15 @@
             <span class="k">else</span><span class="p">:</span>
                 <span class="n">all_required_variables</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">test</span><span class="o">.</span><span class="n">required_variables</span><span class="p">)</span>
                 <span class="n">test_qc_outputs_cols</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">test</span><span class="o">.</span><span class="n">qc_outputs</span><span class="p">)</span>
-            <span class="c1">#   Check that the required variables for the test are in the dataset</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_required_variables</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">keys</span><span class="p">())):</span>
+            <span class="c1">#   Check that the required variables for the test are in the dataset.</span>
+            <span class="c1">#   Use data.variables (data vars + coordinates), not data.keys() (data</span>
+            <span class="c1">#   vars only), so a required variable stored as a coordinate (e.g. TIME,</span>
+            <span class="c1">#   LATITUDE, LONGITUDE) is not falsely reported as missing.</span>
+            <span class="n">present</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">variables</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">set</span><span class="p">(</span><span class="n">all_required_variables</span><span class="p">)</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span><span class="n">present</span><span class="p">):</span>
                 <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;[Apply QC] The data is missing variables: (</span><span class="si">{</span><span class="nb">set</span><span class="p">(</span><span class="n">all_required_variables</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nb">set</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span><span class="si">}</span><span class="s2">) which are required for running QC &#39;</span><span class="si">{</span><span class="n">test</span><span class="o">.</span><span class="n">qc_name</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot; Make sure that the variables are present in the data, or use remove tests from the order.&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;[Apply QC] The data is missing variables: (</span><span class="si">{</span><span class="nb">set</span><span class="p">(</span><span class="n">all_required_variables</span><span class="p">)</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">present</span><span class="si">}</span><span class="s2">) which are required for running QC &#39;</span><span class="si">{</span><span class="n">test</span><span class="o">.</span><span class="n">qc_name</span><span class="si">}</span><span class="s2">&#39;.&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot; Make sure that the variables are present in the data, or remove tests from the order.&quot;</span>
                 <span class="p">)</span>
         <span class="c1"># Convert data to polars for fast processing</span>
         <span class="c1"># Fetch existing flags from the data and create a place to store them</span>
@@ -646,9 +650,16 @@
                 <span class="n">attrs</span><span class="p">[</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">attr_test</span><span class="si">}</span><span class="s2">_params&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">qc_test_params</span><span class="p">)</span>
                 <span class="c1"># Can get indices of 3/4 with np.where(var_flags.to_numpy() == 3)[0] for future reference</span>
 
-            <span class="c1"># Diagnostic plotting</span>
+            <span class="c1"># Diagnostic plotting. Never let a diagnostic-only error abort QC;</span>
+            <span class="c1"># this matters when the report writer force-enables diagnostics to</span>
+            <span class="c1"># capture plots for every test.</span>
             <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">diagnostics</span><span class="p">:</span>
-                <span class="n">qc_test_instance</span><span class="o">.</span><span class="n">plot_diagnostics</span><span class="p">()</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">qc_test_instance</span><span class="o">.</span><span class="n">plot_diagnostics</span><span class="p">()</span>
+                <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">exc</span><span class="p">:</span>  <span class="c1"># noqa: BLE001 - diagnostics must not be fatal</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">log_warn</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;Diagnostic plotting failed for QC test &#39;</span><span class="si">{</span><span class="n">qc_qc_name</span><span class="si">}</span><span class="s2">&#39;: </span><span class="si">{</span><span class="n">exc</span><span class="si">}</span><span class="s2">&quot;</span>
+                    <span class="p">)</span>
 
             <span class="c1"># Once finished, remove the test instance from memory</span>
             <span class="k">del</span> <span class="n">qc_test_instance</span>

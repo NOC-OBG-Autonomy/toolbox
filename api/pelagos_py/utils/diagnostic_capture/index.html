@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>pelagos_py.utils.qc_handling &#8212; Pelagos-Py</title>
+    <title>pelagos_py.utils.diagnostic_capture &#8212; Pelagos-Py</title>
   
   
   
@@ -50,14 +50,14 @@
     <script src="../../../../_static/copybutton.js?v=df1a032d"></script>
     <script src="../../../../_static/design-tabs.js?v=f930bc37"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'api/pelagos_py/utils/qc_handling/index';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api/pelagos_py/utils/diagnostic_capture/index';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
-    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/api/pelagos_py/utils/qc_handling/index.html" />
+    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/api/pelagos_py/utils/diagnostic_capture/index.html" />
     <link rel="icon" href="../../../../_static/NOC_logo.svg"/>
     <link rel="index" title="Index" href="../../../../genindex.html" />
     <link rel="search" title="Search" href="../../../../search.html" />
-    <link rel="next" title="pelagos_py.utils.yaml_loading" href="../yaml_loading/index.html" />
-    <link rel="prev" title="pelagos_py.utils.parameter_spec" href="../parameter_spec/index.html" />
+    <link rel="next" title="pelagos_py.utils.diagnostics" href="../diagnostics/index.html" />
+    <link rel="prev" title="pelagos_py.utils" href="../index.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.0" />
@@ -240,6 +240,10 @@
   
 
   
+    <button class="pst-navbar-icon sidebar-toggle secondary-toggle" aria-label="On this page">
+      <span class="fa-solid fa-outdent"></span>
+    </button>
+  
 </div>
 
     </header>
@@ -396,11 +400,11 @@
 </ul>
 </details></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">pelagos_py.utils</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="../diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">pelagos_py.utils.diagnostic_capture</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../log_levels/index.html">pelagos_py.utils.log_levels</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../parameter_spec/index.html">pelagos_py.utils.parameter_spec</a></li>
-<li class="toctree-l2 current active"><a class="current reference internal" href="#">pelagos_py.utils.qc_handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../yaml_loading/index.html">pelagos_py.utils.yaml_loading</a></li>
 </ul>
 </details></li>
@@ -450,7 +454,7 @@
     
     <li class="breadcrumb-item"><a href="../index.html" class="nav-link">pelagos_py.utils</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">pelagos_py.utils.qc_handling</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">pelagos_py.utils.diagnostic_capture</span></li>
   </ul>
 </nav>
 </div>
@@ -467,8 +471,68 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="module-pelagos_py.utils.qc_handling">
-<span id="pelagos-py-utils-qc-handling"></span><h1>pelagos_py.utils.qc_handling<a class="headerlink" href="#module-pelagos_py.utils.qc_handling" title="Link to this heading">#</a></h1>
+  <section id="module-pelagos_py.utils.diagnostic_capture">
+<span id="pelagos-py-utils-diagnostic-capture"></span><h1>pelagos_py.utils.diagnostic_capture<a class="headerlink" href="#module-pelagos_py.utils.diagnostic_capture" title="Link to this heading">#</a></h1>
+<dl class="py function">
+<dt class="sig sig-object py" id="pelagos_py.utils.diagnostic_capture.force_headless_backend">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.diagnostic_capture.</span></span><span class="sig-name descname"><span class="pre">force_headless_backend</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/diagnostic_capture.html#force_headless_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.diagnostic_capture.force_headless_backend" title="Link to this definition">#</a></dt>
+<dd><p>Force the headless Agg backend for the whole report run.</p>
+<p>Report figures are saved to disk, never displayed, so no GUI backend is
+needed. Steps’ diagnostics commonly call <code class="docutils literal notranslate"><span class="pre">matplotlib.use(&quot;tkagg&quot;)</span></code> to
+force the interactive Tk backend; under report capture that is both
+pointless and dangerous - instantiating a Tk canvas off the main thread
+(e.g. when driven from an IDE/GUI) can hard-crash the process on Windows.</p>
+<p>The backend is switched to Agg exactly once here and <code class="docutils literal notranslate"><span class="pre">matplotlib.use()</span></code> is
+neutralised for the duration, so every step’s backend switch becomes a
+harmless no-op and the backend is never toggled mid-run (repeated
+<code class="docutils literal notranslate"><span class="pre">use(...,</span> <span class="pre">force=True)</span></code> re-initialises matplotlib’s compiled backend, which
+can trigger a fatal delay-load crash on Windows). Both are restored on exit.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pelagos_py.utils.diagnostic_capture.capture_figures">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.diagnostic_capture.</span></span><span class="sig-name descname"><span class="pre">capture_figures</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">outdir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">step_name</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">images</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">suppress_text</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">interactive</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><span class="pre">bool</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/diagnostic_capture.html#capture_figures"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.diagnostic_capture.capture_figures" title="Link to this definition">#</a></dt>
+<dd><p>Redirect <code class="docutils literal notranslate"><span class="pre">plt.show</span></code> so diagnostic figures are saved for the report.</p>
+<p>Within the context, every <code class="docutils literal notranslate"><span class="pre">plt.show</span></code> call (and any figures still open when
+the context exits) is written to <code class="docutils literal notranslate"><span class="pre">outdir</span></code> and its path recorded in
+<code class="docutils literal notranslate"><span class="pre">images</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>outdir</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Directory the figures are written into.</p></li>
+<li><p><strong>step_name</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a>) – Name of the step producing the figures (used to name the files).</p></li>
+<li><p><strong>images</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><em>list</em></a>) – List that captured image paths are appended to, in the order produced.</p></li>
+<li><p><strong>suppress_text</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – When <code class="docutils literal notranslate"><span class="pre">True</span></code>, stdout is silenced for the duration of the context. Used
+when diagnostics are force-enabled only to capture figures for the
+report: a step whose diagnostics are textual (<code class="docutils literal notranslate"><span class="pre">print</span></code> rather than a
+plot, e.g. the dataset summary from Load Data) would otherwise dump that
+text to the console even though the user never enabled diagnostics.</p></li>
+<li><p><strong>interactive</strong> (<a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><em>bool</em></a><em>, </em><em>optional</em>) – <p>When <code class="docutils literal notranslate"><span class="pre">False</span></code> (default) figures are saved and closed silently - no
+window is shown. This is used for steps whose diagnostics were
+force-enabled only to harvest figures for the report, and keeps the run
+headless (Agg) and Windows-safe.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">True</span></code> (the user explicitly set <code class="docutils literal notranslate"><span class="pre">diagnostics:</span> <span class="pre">true</span></code> on this
+step) the figure is saved to the report <em>and</em> shown in a blocking popup,
+so the pipeline pauses on that step exactly as it would outside a report
+run. This temporarily switches to the interactive Tk backend for the
+duration of the step and switches back to headless Agg afterwards; the
+GUI backend is the reason this path is opt-in only.</p>
+</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pelagos_py.utils.diagnostic_capture.make_diagnostics_safe">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.diagnostic_capture.</span></span><span class="sig-name descname"><span class="pre">make_diagnostics_safe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">step</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/constants.html#None" title="(in Python v3.14)"><span class="pre">None</span></a></span></span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/diagnostic_capture.html#make_diagnostics_safe"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.diagnostic_capture.make_diagnostics_safe" title="Link to this definition">#</a></dt>
+<dd><p>Wrap a step’s diagnostic methods so a failure never aborts the step.</p>
+<p>Used when diagnostics are force-enabled to capture plots for the report: a
+user who did not opt into diagnostics should never have the pipeline fail
+because of a diagnostic-only error. The error is logged as a warning and the
+step’s core processing continues.</p>
+</dd></dl>
+
 </section>
 
 
@@ -481,6 +545,26 @@
             </div>
             
             
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
+
+
+  <div class="sidebar-secondary-item">
+<div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> On this page
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.diagnostic_capture.force_headless_backend"><code class="docutils literal notranslate"><span class="pre">force_headless_backend()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.diagnostic_capture.capture_figures"><code class="docutils literal notranslate"><span class="pre">capture_figures()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.diagnostic_capture.make_diagnostics_safe"><code class="docutils literal notranslate"><span class="pre">make_diagnostics_safe()</span></code></a></li>
+</ul>
+  </nav></div>
+
+</div></div>
               
             
           </div>

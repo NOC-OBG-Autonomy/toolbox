@@ -8,7 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>pelagos_py.steps.input_output &#8212; Pelagos-Py</title>
+    <title>pelagos_py.utils.yaml_loading &#8212; Pelagos-Py</title>
   
   
   
@@ -50,14 +50,14 @@
     <script src="../../../../_static/copybutton.js?v=df1a032d"></script>
     <script src="../../../../_static/design-tabs.js?v=f930bc37"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'api/pelagos_py/steps/input_output/index';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'api/pelagos_py/utils/yaml_loading/index';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
-    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/api/pelagos_py/steps/input_output/index.html" />
+    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/api/pelagos_py/utils/yaml_loading/index.html" />
     <link rel="icon" href="../../../../_static/NOC_logo.svg"/>
     <link rel="index" title="Index" href="../../../../genindex.html" />
     <link rel="search" title="Search" href="../../../../search.html" />
-    <link rel="next" title="pelagos_py.steps.input_output.correct_values" href="correct_values/index.html" />
-    <link rel="prev" title="pelagos_py.steps.base_step" href="../base_step/index.html" />
+    <link rel="next" title="Development" href="../../../../development.html" />
+    <link rel="prev" title="pelagos_py.utils.qc_handling" href="../qc_handling/index.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.0" />
@@ -355,57 +355,57 @@
   <p class="bd-links__title" role="heading" aria-level="1">Section Navigation</p>
   <div class="bd-toc-item navbar-nav"><ul class="current nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../pipeline/index.html">pelagos_py.pipeline</a></li>
-<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">pelagos_py.steps</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="../base_qc/index.html">pelagos_py.steps.base_qc</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../base_step/index.html">pelagos_py.steps.base_step</a></li>
-<li class="toctree-l2 current active has-children"><a class="current reference internal" href="#">pelagos_py.steps.input_output</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="correct_values/index.html">pelagos_py.steps.input_output.correct_values</a></li>
-<li class="toctree-l3"><a class="reference internal" href="export/index.html">pelagos_py.steps.input_output.export</a></li>
-<li class="toctree-l3"><a class="reference internal" href="format_check/index.html">pelagos_py.steps.input_output.format_check</a></li>
-<li class="toctree-l3"><a class="reference internal" href="gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
-<li class="toctree-l3"><a class="reference internal" href="load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
-<li class="toctree-l3"><a class="reference internal" href="write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
-<li class="toctree-l3"><a class="reference internal" href="write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../../steps/index.html">pelagos_py.steps</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../../steps/base_qc/index.html">pelagos_py.steps.base_qc</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../steps/base_step/index.html">pelagos_py.steps.base_step</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../steps/input_output/index.html">pelagos_py.steps.input_output</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/correct_values/index.html">pelagos_py.steps.input_output.correct_values</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/export/index.html">pelagos_py.steps.input_output.export</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/format_check/index.html">pelagos_py.steps.input_output.format_check</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../processing/index.html">pelagos_py.steps.processing</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../processing/bbp/index.html">pelagos_py.steps.processing.bbp</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/chla/index.html">pelagos_py.steps.processing.chla</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/derive_ctd/index.html">pelagos_py.steps.processing.derive_ctd</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/find_profiles/index.html">pelagos_py.steps.processing.find_profiles</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/interpolate_data/index.html">pelagos_py.steps.processing.interpolate_data</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/oxygen/index.html">pelagos_py.steps.processing.oxygen</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../processing/salinity/index.html">pelagos_py.steps.processing.salinity</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../steps/processing/index.html">pelagos_py.steps.processing</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/bbp/index.html">pelagos_py.steps.processing.bbp</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/chla/index.html">pelagos_py.steps.processing.chla</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/derive_ctd/index.html">pelagos_py.steps.processing.derive_ctd</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/find_profiles/index.html">pelagos_py.steps.processing.find_profiles</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/interpolate_data/index.html">pelagos_py.steps.processing.interpolate_data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/oxygen/index.html">pelagos_py.steps.processing.oxygen</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/processing/salinity/index.html">pelagos_py.steps.processing.salinity</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../quality_control/index.html">pelagos_py.steps.quality_control</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/apply_qc/index.html">pelagos_py.steps.quality_control.apply_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/flag_full_profile/index.html">pelagos_py.steps.quality_control.flag_full_profile</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/impossible_date_qc/index.html">pelagos_py.steps.quality_control.impossible_date_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/impossible_location_qc/index.html">pelagos_py.steps.quality_control.impossible_location_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/impossible_speed_qc/index.html">pelagos_py.steps.quality_control.impossible_speed_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/par_irregularity_qc/index.html">pelagos_py.steps.quality_control.par_irregularity_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/position_on_land_qc/index.html">pelagos_py.steps.quality_control.position_on_land_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/range_qc/index.html">pelagos_py.steps.quality_control.range_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/spike_qc/index.html">pelagos_py.steps.quality_control.spike_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/stuck_value_qc/index.html">pelagos_py.steps.quality_control.stuck_value_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../quality_control/valid_profile_qc/index.html">pelagos_py.steps.quality_control.valid_profile_qc</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../steps/quality_control/index.html">pelagos_py.steps.quality_control</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/apply_qc/index.html">pelagos_py.steps.quality_control.apply_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/flag_full_profile/index.html">pelagos_py.steps.quality_control.flag_full_profile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/impossible_date_qc/index.html">pelagos_py.steps.quality_control.impossible_date_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/impossible_location_qc/index.html">pelagos_py.steps.quality_control.impossible_location_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/impossible_speed_qc/index.html">pelagos_py.steps.quality_control.impossible_speed_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/par_irregularity_qc/index.html">pelagos_py.steps.quality_control.par_irregularity_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/position_on_land_qc/index.html">pelagos_py.steps.quality_control.position_on_land_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/range_qc/index.html">pelagos_py.steps.quality_control.range_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/spike_qc/index.html">pelagos_py.steps.quality_control.spike_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/stuck_value_qc/index.html">pelagos_py.steps.quality_control.stuck_value_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/quality_control/valid_profile_qc/index.html">pelagos_py.steps.quality_control.valid_profile_qc</a></li>
 </ul>
 </details></li>
-<li class="toctree-l2 has-children"><a class="reference internal" href="../templates/index.html">pelagos_py.steps.templates</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l3"><a class="reference internal" href="../templates/blank_qc/index.html">pelagos_py.steps.templates.blank_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="../templates/blank_step/index.html">pelagos_py.steps.templates.blank_step</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../../steps/templates/index.html">pelagos_py.steps.templates</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/templates/blank_qc/index.html">pelagos_py.steps.templates.blank_qc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/templates/blank_step/index.html">pelagos_py.steps.templates.blank_step</a></li>
 </ul>
 </details></li>
 </ul>
 </details></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="../../utils/index.html">pelagos_py.utils</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/log_levels/index.html">pelagos_py.utils.log_levels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/parameter_spec/index.html">pelagos_py.utils.parameter_spec</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
-<li class="toctree-l2"><a class="reference internal" href="../../utils/yaml_loading/index.html">pelagos_py.utils.yaml_loading</a></li>
+<li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">pelagos_py.utils</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../log_levels/index.html">pelagos_py.utils.log_levels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../parameter_spec/index.html">pelagos_py.utils.parameter_spec</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
+<li class="toctree-l2 current active"><a class="current reference internal" href="#">pelagos_py.utils.yaml_loading</a></li>
 </ul>
 </details></li>
 </ul>
@@ -452,9 +452,9 @@
     <li class="breadcrumb-item"><a href="../../../../api_reference.html" class="nav-link">API Reference</a></li>
     
     
-    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">pelagos_py.steps</a></li>
+    <li class="breadcrumb-item"><a href="../index.html" class="nav-link">pelagos_py.utils</a></li>
     
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">pelagos_py.steps.input_output</span></li>
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">pelagos_py.utils.yaml_loading</span></li>
   </ul>
 </nav>
 </div>
@@ -471,22 +471,29 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="module-pelagos_py.steps.input_output">
-<span id="pelagos-py-steps-input-output"></span><h1>pelagos_py.steps.input_output<a class="headerlink" href="#module-pelagos_py.steps.input_output" title="Link to this heading">#</a></h1>
-<section id="submodules">
-<h2>Submodules<a class="headerlink" href="#submodules" title="Link to this heading">#</a></h2>
-<div class="toctree-wrapper compound">
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="correct_values/index.html">pelagos_py.steps.input_output.correct_values</a></li>
-<li class="toctree-l1"><a class="reference internal" href="export/index.html">pelagos_py.steps.input_output.export</a></li>
-<li class="toctree-l1"><a class="reference internal" href="format_check/index.html">pelagos_py.steps.input_output.format_check</a></li>
-<li class="toctree-l1"><a class="reference internal" href="gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
-<li class="toctree-l1"><a class="reference internal" href="load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
-<li class="toctree-l1"><a class="reference internal" href="write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
-<li class="toctree-l1"><a class="reference internal" href="write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
-</ul>
-</div>
-</section>
+  <section id="module-pelagos_py.utils.yaml_loading">
+<span id="pelagos-py-utils-yaml-loading"></span><h1>pelagos_py.utils.yaml_loading<a class="headerlink" href="#module-pelagos_py.utils.yaml_loading" title="Link to this heading">#</a></h1>
+<dl class="py class">
+<dt class="sig sig-object py" id="pelagos_py.utils.yaml_loading.PelagosSafeLoader">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.yaml_loading.</span></span><span class="sig-name descname"><span class="pre">PelagosSafeLoader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/yaml_loading.html#PelagosSafeLoader"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.yaml_loading.PelagosSafeLoader" title="Link to this definition">#</a></dt>
+<dd><p>Bases: <code class="xref py py-obj docutils literal notranslate"><span class="pre">yaml.SafeLoader</span></code></p>
+<p><code class="docutils literal notranslate"><span class="pre">SafeLoader</span></code> with a float resolver that accepts <code class="docutils literal notranslate"><span class="pre">3e-2</span></code>-style numbers.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pelagos_py.utils.yaml_loading.safe_load">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.yaml_loading.</span></span><span class="sig-name descname"><span class="pre">safe_load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">stream</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/yaml_loading.html#safe_load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.yaml_loading.safe_load" title="Link to this definition">#</a></dt>
+<dd><p>Parse YAML like <code class="docutils literal notranslate"><span class="pre">yaml.safe_load</span></code>, resolving <code class="docutils literal notranslate"><span class="pre">3e-2</span></code>-style floats.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>stream</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><em>str</em></a><em> or </em><em>file-like</em>) – YAML text or an open file handle.</p>
+</dd>
+<dt class="field-even">Return type<span class="colon">:</span></dt>
+<dd class="field-even"><p>The parsed Python object (<code class="docutils literal notranslate"><span class="pre">None</span></code> for an empty document).</p>
+</dd>
+</dl>
+</dd></dl>
+
 </section>
 
 
@@ -512,7 +519,8 @@
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
-<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#submodules">Submodules</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.yaml_loading.PelagosSafeLoader"><code class="docutils literal notranslate"><span class="pre">PelagosSafeLoader</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.yaml_loading.safe_load"><code class="docutils literal notranslate"><span class="pre">safe_load()</span></code></a></li>
 </ul>
   </nav></div>
 

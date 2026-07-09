@@ -418,13 +418,30 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.yaml_loading</span><span class="w"> </span><span class="kn">import</span> <span class="n">safe_load</span> <span class="k">as</span> <span class="n">yaml_safe_load</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.steps.base_step</span><span class="w"> </span><span class="kn">import</span> <span class="n">REGISTERED_STEPS</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.steps.base_qc</span><span class="w"> </span><span class="kn">import</span> <span class="n">REGISTERED_QC</span>
 
-<span class="c1"># Setup logger for discovery</span>
+<span class="c1"># Setup logger for discovery. A console handler is attached here (rather than</span>
+<span class="c1"># left to Pipeline._setup_logging) because discover_steps() runs at import</span>
+<span class="c1"># time, before a Pipeline object exists to configure logging -- without this,</span>
+<span class="c1"># the import-time module scan (which can take several seconds due to heavy</span>
+<span class="c1"># step dependencies) is completely silent.</span>
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;pelagos_py.pipeline.discovery&quot;</span><span class="p">)</span>
+<span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">logger</span><span class="o">.</span><span class="n">handlers</span><span class="p">:</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">propagate</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1">#   Avoid duplicate lines if the app configures root logging</span>
+    <span class="n">_ch</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">()</span>
+    <span class="n">_ch</span><span class="o">.</span><span class="n">setFormatter</span><span class="p">(</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">(</span>
+            <span class="s2">&quot;</span><span class="si">%(asctime)s</span><span class="s2"> - </span><span class="si">%(levelname)s</span><span class="s2"> - </span><span class="si">%(name)s</span><span class="s2"> - </span><span class="si">%(message)s</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">_ch</span><span class="p">)</span>
 
 <span class="c1"># Global registries</span>
 <div class="viewcode-block" id="STEP_CLASSES">
@@ -449,6 +466,8 @@
     <span class="n">base_dir</span> <span class="o">=</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span>
     <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Scanning for step modules in </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">base_dir</span><span class="p">)</span>
 
+    <span class="n">discovery_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">failed_modules</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">py_file</span> <span class="ow">in</span> <span class="n">base_dir</span><span class="o">.</span><span class="n">rglob</span><span class="p">(</span><span class="s2">&quot;*.py&quot;</span><span class="p">):</span>
         <span class="k">if</span> <span class="n">py_file</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;__init__.py&quot;</span><span class="p">:</span>
             <span class="k">continue</span>
@@ -459,20 +478,41 @@
             <span class="p">(</span><span class="s2">&quot;pelagos_py.steps&quot;</span><span class="p">,)</span> <span class="o">+</span> <span class="n">relative_path</span><span class="o">.</span><span class="n">with_suffix</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">parts</span>
         <span class="p">)</span>
 
+        <span class="n">module_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Importing step module: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">module_name</span><span class="p">)</span>
             <span class="n">importlib</span><span class="o">.</span><span class="n">import_module</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
         <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="n">logger</span><span class="o">.</span><span class="n">error</span><span class="p">(</span><span class="s2">&quot;Failed to import </span><span class="si">%s</span><span class="s2">: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+            <span class="n">failed_modules</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">module_name</span><span class="p">)</span>
+            <span class="k">continue</span>
+        <span class="n">elapsed</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">module_start</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Imported step module: </span><span class="si">%s</span><span class="s2"> (</span><span class="si">%.2f</span><span class="s2">s)&quot;</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">elapsed</span><span class="p">)</span>
 
-    <span class="c1"># Populate global step class map</span>
+    <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+        <span class="s2">&quot;Finished importing step modules in </span><span class="si">%.2f</span><span class="s2">s&quot;</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span> <span class="o">-</span> <span class="n">discovery_start</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Populate global step class map. Importing the modules above is what&#39;s</span>
+    <span class="c1"># slow (it runs each module&#39;s top-level code, including its dependency</span>
+    <span class="c1"># imports) and is what actually registers each class (via @register_step,</span>
+    <span class="c1"># which fires at class-definition time); this is just copying the</span>
+    <span class="c1"># already-registered classes into the public dicts.</span>
     <span class="n">STEP_CLASSES</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">REGISTERED_STEPS</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">step_name</span> <span class="ow">in</span> <span class="n">STEP_CLASSES</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Registered step: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">step_name</span><span class="p">)</span>
-
     <span class="n">QC_CLASSES</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">REGISTERED_QC</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">qc_name</span> <span class="ow">in</span> <span class="n">QC_CLASSES</span><span class="p">:</span>
-        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Registered QC test: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">qc_name</span><span class="p">)</span></div>
+    <span class="k">if</span> <span class="n">failed_modules</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="s2">&quot;Registered </span><span class="si">%d</span><span class="s2"> steps and </span><span class="si">%d</span><span class="s2"> QC tests; </span><span class="si">%d</span><span class="s2"> module(s) failed to import: </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">STEP_CLASSES</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">QC_CLASSES</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">failed_modules</span><span class="p">),</span>
+            <span class="s2">&quot;, &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">failed_modules</span><span class="p">),</span>
+        <span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span>
+            <span class="s2">&quot;Registered </span><span class="si">%d</span><span class="s2"> steps and </span><span class="si">%d</span><span class="s2"> QC tests successfully&quot;</span><span class="p">,</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">STEP_CLASSES</span><span class="p">),</span>
+            <span class="nb">len</span><span class="p">(</span><span class="n">QC_CLASSES</span><span class="p">),</span>
+        <span class="p">)</span></div>
 
 
 
@@ -504,7 +544,7 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">step_config</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">FileNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Step config file not found: </span><span class="si">{</span><span class="n">step_config</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">step_config</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="n">step_config</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
+            <span class="n">step_config</span> <span class="o">=</span> <span class="n">yaml_safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="s2">&quot;name&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">step_config</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid step YAML: missing &#39;name&#39; key -&gt; </span><span class="si">{</span><span class="n">step_config</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 

@@ -498,6 +498,39 @@
 
 
 
+<div class="viewcode-block" id="coerce">
+<a class="viewcode-back" href="../../../api/pelagos_py/utils/parameter_spec/index.html#pelagos_py.utils.parameter_spec.coerce">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">coerce</span><span class="p">(</span><span class="n">spec</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">value</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Coerce a numeric *string* to the spec&#39;s declared numeric type.</span>
+
+<span class="sd">    Configs are not always parsed by pelagos: a caller may hand the pipeline a</span>
+<span class="sd">    dict it built itself (or parsed with plain ``yaml.safe_load``), in which case</span>
+<span class="sd">    scientific-notation numbers like ``3e-2`` arrive as strings (a YAML 1.1</span>
+<span class="sd">    quirk). When the spec declares a numeric type and does not also accept ``str``,</span>
+<span class="sd">    convert such a string to ``int``/``float`` so it satisfies the type check</span>
+<span class="sd">    regardless of how the config was produced.</span>
+
+<span class="sd">    Anything that is not a numeric string, or whose spec legitimately accepts a</span>
+<span class="sd">    string, is returned unchanged.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">allowed</span> <span class="o">=</span> <span class="n">_allowed_types</span><span class="p">(</span><span class="n">spec</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">allowed</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">str</span> <span class="ow">in</span> <span class="n">allowed</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">value</span>
+    <span class="n">text</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="k">if</span> <span class="nb">int</span> <span class="ow">in</span> <span class="n">allowed</span> <span class="ow">and</span> <span class="nb">float</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">value</span>
+    <span class="k">if</span> <span class="nb">float</span> <span class="ow">in</span> <span class="n">allowed</span><span class="p">:</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">value</span></div>
+
+
+
 <span class="k">def</span><span class="w"> </span><span class="nf">_expected_str</span><span class="p">(</span><span class="n">spec</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Render a spec&#39;s declared ``type`` for an error message.&quot;&quot;&quot;</span>
     <span class="n">names</span> <span class="o">=</span> <span class="n">_type_name</span><span class="p">(</span><span class="n">spec</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;type&quot;</span><span class="p">))</span>
@@ -570,11 +603,15 @@
             <span class="sa">f</span><span class="s2">&quot;Valid parameters: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">schema</span><span class="p">))</span><span class="w"> </span><span class="ow">or</span><span class="w"> </span><span class="s1">&#39;(none)&#39;</span><span class="si">}</span><span class="s2">.&quot;</span>
         <span class="p">)</span>
 
+    <span class="c1"># Coerce numeric strings (e.g. &quot;3e-2&quot; from a hand-parsed/plain-YAML config)</span>
+    <span class="c1"># to their declared numeric type before any type checking.</span>
+    <span class="n">supplied</span> <span class="o">=</span> <span class="p">{</span><span class="n">name</span><span class="p">:</span> <span class="n">coerce</span><span class="p">(</span><span class="n">schema</span><span class="p">[</span><span class="n">name</span><span class="p">],</span> <span class="n">params</span><span class="p">[</span><span class="n">name</span><span class="p">])</span> <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">params</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">schema</span><span class="p">}</span>
+
     <span class="n">resolved</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">missing</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">spec</span> <span class="ow">in</span> <span class="n">schema</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">params</span><span class="p">:</span>
-            <span class="n">resolved</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">params</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">supplied</span><span class="p">:</span>
+            <span class="n">resolved</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">supplied</span><span class="p">[</span><span class="n">name</span><span class="p">]</span>
         <span class="k">elif</span> <span class="n">is_required</span><span class="p">(</span><span class="n">spec</span><span class="p">):</span>
             <span class="n">missing</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -585,7 +622,7 @@
             <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">] missing required parameter(s): </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">missing</span><span class="p">))</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="p">)</span>
 
-    <span class="n">bad_types</span> <span class="o">=</span> <span class="n">type_errors</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">params</span><span class="p">)</span>
+    <span class="n">bad_types</span> <span class="o">=</span> <span class="n">type_errors</span><span class="p">(</span><span class="n">schema</span><span class="p">,</span> <span class="n">supplied</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">bad_types</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
             <span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">label</span><span class="si">}</span><span class="s2">] invalid parameter type(s): </span><span class="si">{</span><span class="s1">&#39;; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">bad_types</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>

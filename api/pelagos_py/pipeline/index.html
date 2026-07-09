@@ -365,6 +365,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../steps/input_output/gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../steps/input_output/load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../steps/input_output/write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../steps/input_output/write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
 </ul>
 </details></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../steps/processing/index.html">pelagos_py.steps.processing</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -399,10 +400,12 @@
 </ul>
 </details></li>
 <li class="toctree-l1 has-children"><a class="reference internal" href="../utils/index.html">pelagos_py.utils</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
+<li class="toctree-l2"><a class="reference internal" href="../utils/diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../utils/diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../utils/log_levels/index.html">pelagos_py.utils.log_levels</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../utils/parameter_spec/index.html">pelagos_py.utils.parameter_spec</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../utils/qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../utils/yaml_loading/index.html">pelagos_py.utils.yaml_loading</a></li>
 </ul>
 </details></li>
 </ul>
@@ -467,6 +470,12 @@
                   
   <section id="module-pelagos_py.pipeline">
 <span id="pelagos-py-pipeline"></span><h1>pelagos_py.pipeline<a class="headerlink" href="#module-pelagos_py.pipeline" title="Link to this heading">#</a></h1>
+<dl class="py data">
+<dt class="sig sig-object py" id="pelagos_py.pipeline.REPORT_STEP_NAME">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.pipeline.</span></span><span class="sig-name descname"><span class="pre">REPORT_STEP_NAME</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">'Write</span> <span class="pre">Data</span> <span class="pre">Report</span> <span class="pre">(Python)'</span></em><a class="reference internal" href="../../../_modules/pelagos_py/pipeline.html#REPORT_STEP_NAME"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.pipeline.REPORT_STEP_NAME" title="Link to this definition">#</a></dt>
+<dd><p>Name of the report step that triggers background diagnostic capture.</p>
+</dd></dl>
+
 <dl class="py class">
 <dt class="sig sig-object py" id="pelagos_py.pipeline.Pipeline">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">pelagos_py.pipeline.</span></span><span class="sig-name descname"><span class="pre">Pipeline</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../_modules/pelagos_py/pipeline.html#Pipeline"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.pipeline.Pipeline" title="Link to this definition">#</a></dt>
@@ -617,6 +626,7 @@
   </div>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.pipeline.REPORT_STEP_NAME"><code class="docutils literal notranslate"><span class="pre">REPORT_STEP_NAME</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.pipeline.Pipeline"><code class="docutils literal notranslate"><span class="pre">Pipeline</span></code></a><ul class="nav section-nav flex-column">
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.pipeline.Pipeline.build_steps"><code class="docutils literal notranslate"><span class="pre">Pipeline.build_steps()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.pipeline.Pipeline.add_step"><code class="docutils literal notranslate"><span class="pre">Pipeline.add_step()</span></code></a></li>

@@ -2,13 +2,12 @@
 <!DOCTYPE html>
 
 
-<html lang="en" data-content_root="../" >
+<html lang="en" data-content_root="../../../" >
 
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <title>API Reference &#8212; Pelagos-Py</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pelagos_py.utils.yaml_loading &#8212; Pelagos-Py</title>
   
   
   
@@ -27,43 +26,43 @@
   </noscript>
   
   <!-- Loaded before other Sphinx assets -->
-  <link href="../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
-<link href="../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+  <link href="../../../_static/styles/theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
+<link href="../../../_static/styles/pydata-sphinx-theme.css?digest=a95f357e85573c9b56d5" rel="stylesheet" />
 
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d75fae25" />
-    <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/graphviz.css?v=4ae1632d" />
-    <link rel="stylesheet" type="text/css" href="../_static/sphinx-codeautolink.css?v=b2176991" />
-    <link rel="stylesheet" type="text/css" href="../_static/sphinx-design.min.css?v=95c83b7e" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=1376b26a" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/pygments.css?v=d75fae25" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/copybutton.css?v=76b2166b" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/graphviz.css?v=4ae1632d" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-codeautolink.css?v=b2176991" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="../../../_static/custom.css?v=1376b26a" />
   
   <!-- So that users can add custom icons -->
-  <script defer src="../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
+  <script defer src="../../../_static/scripts/fontawesome.js?digest=a95f357e85573c9b56d5"></script>
   <!-- Pre-loaded scripts that we'll load fully later -->
-  <link rel="preload" as="script" href="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
-<link rel="preload" as="script" href="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
+  <link rel="preload" as="script" href="../../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5" />
+<link rel="preload" as="script" href="../../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5" />
 
-    <script src="../_static/documentation_options.js?v=0b8c961e"></script>
-    <script src="../_static/doctools.js?v=9bcbadda"></script>
-    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
-    <script src="../_static/copybutton.js?v=df1a032d"></script>
-    <script src="../_static/design-tabs.js?v=f930bc37"></script>
+    <script src="../../../_static/documentation_options.js?v=0b8c961e"></script>
+    <script src="../../../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../../../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../../../_static/clipboard.min.js?v=a7894cd8"></script>
+    <script src="../../../_static/copybutton.js?v=df1a032d"></script>
+    <script src="../../../_static/design-tabs.js?v=f930bc37"></script>
     <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-    <script>DOCUMENTATION_OPTIONS.pagename = 'api/index';</script>
+    <script>DOCUMENTATION_OPTIONS.pagename = '_modules/pelagos_py/utils/yaml_loading';</script>
     <script>DOCUMENTATION_OPTIONS.search_as_you_type = false;</script>
-    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/api/index.html" />
-    <link rel="icon" href="../_static/NOC_logo.svg"/>
-    <link rel="index" title="Index" href="../genindex.html" />
-    <link rel="search" title="Search" href="../search.html" />
+    <link rel="canonical" href="https://noc-obg-autonomy.github.io/pelagos-py/_modules/pelagos_py/utils/yaml_loading.html" />
+    <link rel="icon" href="../../../_static/NOC_logo.svg"/>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
   <meta name="docsearch:version" content="0.0" />
   
     
-    <script src="../_static/searchtools.js"></script>
-    <script src="../_static/language_data.js"></script>
-    <script src="../searchindex.js"></script>
+    <script src="../../../_static/searchtools.js"></script>
+    <script src="../../../_static/language_data.js"></script>
+    <script src="../../../searchindex.js"></script>
   
   </head>
   <body data-default-mode="">
@@ -83,7 +82,7 @@
   <dialog id="pst-search-dialog">
     
 <form class="bd-search d-flex align-items-center"
-      action="../search.html"
+      action="../../../search.html"
       method="get">
   <i class="fa-solid fa-magnifying-glass"></i>
   <input type="search"
@@ -119,7 +118,7 @@
     
   
 
-<a class="navbar-brand logo" href="../index.html">
+<a class="navbar-brand logo" href="../../../index.html">
   
   
   
@@ -130,8 +129,8 @@
       
     
     
-    <img src="../_static/pelagos-py-text-logo.png" class="logo__image only-light" alt="Pelagos-Py - Home"/>
-    <img src="../_static/pelagos-py-text-logo.png" class="logo__image only-dark pst-js-only" alt="Pelagos-Py - Home"/>
+    <img src="../../../_static/pelagos-py-text-logo.png" class="logo__image only-light" alt="Pelagos-Py - Home"/>
+    <img src="../../../_static/pelagos-py-text-logo.png" class="logo__image only-dark pst-js-only" alt="Pelagos-Py - Home"/>
   
   
 </a></div>
@@ -147,28 +146,28 @@
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../getting_started.html">
+  <a class="nav-link nav-internal" href="../../../getting_started.html">
     Getting Started
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../user_guide.html">
+  <a class="nav-link nav-internal" href="../../../user_guide.html">
     User Guide
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../api_reference.html">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
     API Reference
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../development.html">
+  <a class="nav-link nav-internal" href="../../../development.html">
     Development
   </a>
 </li>
@@ -267,28 +266,28 @@
   <ul class="bd-navbar-elements navbar-nav">
     
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../getting_started.html">
+  <a class="nav-link nav-internal" href="../../../getting_started.html">
     Getting Started
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../user_guide.html">
+  <a class="nav-link nav-internal" href="../../../user_guide.html">
     User Guide
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../api_reference.html">
+  <a class="nav-link nav-internal" href="../../../api_reference.html">
     API Reference
   </a>
 </li>
 
 
 <li class="nav-item ">
-  <a class="nav-link nav-internal" href="../development.html">
+  <a class="nav-link nav-internal" href="../../../development.html">
     Development
   </a>
 </li>
@@ -368,11 +367,14 @@
   <ul class="bd-breadcrumbs">
     
     <li class="breadcrumb-item breadcrumb-home">
-      <a href="../index.html" class="nav-link" aria-label="Home">
+      <a href="../../../index.html" class="nav-link" aria-label="Home">
         <i class="fa-solid fa-home"></i>
       </a>
     </li>
-    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">API Reference</span></li>
+    
+    <li class="breadcrumb-item"><a href="../../index.html" class="nav-link">Module code</a></li>
+    
+    <li class="breadcrumb-item active" aria-current="page"><span class="ellipsis">pelagos_py.utils.yaml_loading</span></li>
   </ul>
 </nav>
 </div>
@@ -389,78 +391,84 @@
 <div id="searchbox"></div>
                 <article class="bd-article">
                   
-  <section id="api-reference">
-<h1>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading">#</a></h1>
-<p>This page contains auto-generated API reference documentation <a class="footnote-reference brackets" href="#f1" id="id1" role="doc-noteref"><span class="fn-bracket">[</span>1<span class="fn-bracket">]</span></a>.</p>
-<div class="toctree-wrapper compound">
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="pelagos_py/index.html">pelagos_py</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="pelagos_py/pipeline/index.html">pelagos_py.pipeline</a></li>
-<li class="toctree-l2"><a class="reference internal" href="pelagos_py/steps/index.html">pelagos_py.steps</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/base_qc/index.html">pelagos_py.steps.base_qc</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/base_step/index.html">pelagos_py.steps.base_step</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/input_output/index.html">pelagos_py.steps.input_output</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/correct_values/index.html">pelagos_py.steps.input_output.correct_values</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/export/index.html">pelagos_py.steps.input_output.export</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/format_check/index.html">pelagos_py.steps.input_output.format_check</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/input_output/write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/processing/index.html">pelagos_py.steps.processing</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/bbp/index.html">pelagos_py.steps.processing.bbp</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/chla/index.html">pelagos_py.steps.processing.chla</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/derive_ctd/index.html">pelagos_py.steps.processing.derive_ctd</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/find_profiles/index.html">pelagos_py.steps.processing.find_profiles</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/interpolate_data/index.html">pelagos_py.steps.processing.interpolate_data</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/oxygen/index.html">pelagos_py.steps.processing.oxygen</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/processing/salinity/index.html">pelagos_py.steps.processing.salinity</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/quality_control/index.html">pelagos_py.steps.quality_control</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/apply_qc/index.html">pelagos_py.steps.quality_control.apply_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/flag_full_profile/index.html">pelagos_py.steps.quality_control.flag_full_profile</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/impossible_date_qc/index.html">pelagos_py.steps.quality_control.impossible_date_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/impossible_location_qc/index.html">pelagos_py.steps.quality_control.impossible_location_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/impossible_speed_qc/index.html">pelagos_py.steps.quality_control.impossible_speed_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/par_irregularity_qc/index.html">pelagos_py.steps.quality_control.par_irregularity_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/position_on_land_qc/index.html">pelagos_py.steps.quality_control.position_on_land_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/range_qc/index.html">pelagos_py.steps.quality_control.range_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/spike_qc/index.html">pelagos_py.steps.quality_control.spike_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/stuck_value_qc/index.html">pelagos_py.steps.quality_control.stuck_value_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/quality_control/valid_profile_qc/index.html">pelagos_py.steps.quality_control.valid_profile_qc</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/steps/templates/index.html">pelagos_py.steps.templates</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/templates/blank_qc/index.html">pelagos_py.steps.templates.blank_qc</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pelagos_py/steps/templates/blank_step/index.html">pelagos_py.steps.templates.blank_step</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="pelagos_py/utils/index.html">pelagos_py.utils</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/log_levels/index.html">pelagos_py.utils.log_levels</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/parameter_spec/index.html">pelagos_py.utils.parameter_spec</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
-<li class="toctree-l3"><a class="reference internal" href="pelagos_py/utils/yaml_loading/index.html">pelagos_py.utils.yaml_loading</a></li>
-</ul>
-</li>
-</ul>
-</li>
-</ul>
-</div>
-<aside class="footnote-list brackets">
-<aside class="footnote brackets" id="f1" role="doc-footnote">
-<span class="label"><span class="fn-bracket">[</span><a role="doc-backlink" href="#id1">1</a><span class="fn-bracket">]</span></span>
-<p>Created with <a class="reference external" href="https://github.com/readthedocs/sphinx-autoapi">sphinx-autoapi</a></p>
-</aside>
-</aside>
-</section>
+  <h1>Source code for pelagos_py.utils.yaml_loading</h1><div class="highlight"><pre>
+<span></span><span class="c1"># This file is part of pelagos_py.</span>
+<span class="c1">#</span>
+<span class="c1"># Copyright 2025-2026 National Oceanography Centre and The Contributors</span>
+<span class="c1">#</span>
+<span class="c1"># Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span>
+<span class="c1"># you may not use this file except in compliance with the License.</span>
+<span class="c1"># You may obtain a copy of the License at</span>
+<span class="c1">#</span>
+<span class="c1">#    http://www.apache.org/licenses/LICENSE-2.0</span>
+<span class="c1">#</span>
+<span class="c1"># Unless required by applicable law or agreed to in writing, software</span>
+<span class="c1"># distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span>
+<span class="c1"># WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span>
+<span class="c1"># See the License for the specific language governing permissions and</span>
+<span class="c1"># limitations under the License.</span>
 
+<span class="sd">&quot;&quot;&quot;Shared YAML loading for config files.</span>
+
+<span class="sd">PyYAML implements the YAML 1.1 float rule, whose resolver only recognises</span>
+<span class="sd">scientific notation that carries *both* a decimal point and a signed exponent</span>
+<span class="sd">(``3.0e-2``, ``1.5e+3``). Common forms such as ``3e-2``, ``1e3``, ``-2e-2`` and</span>
+<span class="sd">``3E-2`` are therefore loaded as **strings**, which then fail a step/QC</span>
+<span class="sd">parameter&#39;s ``float`` type check and halt the pipeline.</span>
+
+<span class="sd">This module provides a :func:`safe_load` that behaves like ``yaml.safe_load`` but</span>
+<span class="sd">with a float resolver matching the YAML 1.2 / JSON intent, so integer-mantissa</span>
+<span class="sd">scientific notation is parsed as a ``float``. Use it for every config read so</span>
+<span class="sd">numeric values resolve consistently regardless of how they are written.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">yaml</span>
+
+
+<div class="viewcode-block" id="PelagosSafeLoader">
+<a class="viewcode-back" href="../../../api/pelagos_py/utils/yaml_loading/index.html#pelagos_py.utils.yaml_loading.PelagosSafeLoader">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">PelagosSafeLoader</span><span class="p">(</span><span class="n">yaml</span><span class="o">.</span><span class="n">SafeLoader</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``SafeLoader`` with a float resolver that accepts ``3e-2``-style numbers.&quot;&quot;&quot;</span></div>
+
+
+
+<span class="c1"># Mirrors PyYAML&#39;s default float resolver but adds an integer-mantissa exponent</span>
+<span class="c1"># branch (``[0-9]+[eE][+-]?[0-9]+``) so e.g. ``3e-2`` and ``1e3`` resolve to float.</span>
+<span class="n">_FLOAT_RE</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span>
+<span class="w">    </span><span class="sa">r</span><span class="sd">&quot;&quot;&quot;^(?:</span>
+<span class="sd">        [-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?</span>
+<span class="sd">       |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)</span>
+<span class="sd">       |\.[0-9_]+(?:[eE][-+]?[0-9]+)?</span>
+<span class="sd">       |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*</span>
+<span class="sd">       |[-+]?\.(?:inf|Inf|INF)</span>
+<span class="sd">       |\.(?:nan|NaN|NAN))$&quot;&quot;&quot;</span><span class="p">,</span>
+    <span class="n">re</span><span class="o">.</span><span class="n">X</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">PelagosSafeLoader</span><span class="o">.</span><span class="n">add_implicit_resolver</span><span class="p">(</span>
+    <span class="s2">&quot;tag:yaml.org,2002:float&quot;</span><span class="p">,</span> <span class="n">_FLOAT_RE</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="s2">&quot;-+0123456789.&quot;</span><span class="p">)</span>
+<span class="p">)</span>
+
+
+<div class="viewcode-block" id="safe_load">
+<a class="viewcode-back" href="../../../api/pelagos_py/utils/yaml_loading/index.html#pelagos_py.utils.yaml_loading.safe_load">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">safe_load</span><span class="p">(</span><span class="n">stream</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse YAML like ``yaml.safe_load``, resolving ``3e-2``-style floats.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    stream : str or file-like</span>
+<span class="sd">        YAML text or an open file handle.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    The parsed Python object (``None`` for an empty document).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">yaml</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="n">Loader</span><span class="o">=</span><span class="n">PelagosSafeLoader</span><span class="p">)</span></div>
+
+</pre></div>
 
                 </article>
               
@@ -483,8 +491,8 @@
   </div>
   
   <!-- Scripts loaded after <body> so the DOM is not blocked -->
-  <script defer src="../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
-<script defer src="../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
+  <script defer src="../../../_static/scripts/bootstrap.js?digest=a95f357e85573c9b56d5"></script>
+<script defer src="../../../_static/scripts/pydata-sphinx-theme.js?digest=a95f357e85573c9b56d5"></script>
 
   <footer class="bd-footer">
 <div class="bd-footer__inner bd-page-width">

@@ -419,10 +419,20 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">_dt</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">difflib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">contextlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.config_mirror</span><span class="w"> </span><span class="kn">import</span> <span class="n">ConfigMirrorMixin</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.valid_config_check</span><span class="w"> </span><span class="kn">import</span> <span class="n">check_pipeline_variables</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils.log_levels</span><span class="w"> </span><span class="kn">import</span> <span class="n">STOP</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">diagnostic_capture</span>
+
+<div class="viewcode-block" id="REPORT_STEP_NAME">
+<a class="viewcode-back" href="../../api/pelagos_py/pipeline/index.html#pelagos_py.pipeline.REPORT_STEP_NAME">[docs]</a>
+<span class="n">REPORT_STEP_NAME</span> <span class="o">=</span> <span class="s2">&quot;Write Data Report (Python)&quot;</span></div>
+
+<span class="sd">&quot;&quot;&quot;Name of the report step that triggers background diagnostic capture.&quot;&quot;&quot;</span>
 
 <span class="kn">from</span><span class="w"> </span><span class="nn">pelagos_py.steps</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_step</span><span class="p">,</span> <span class="n">STEP_CLASSES</span>
 
@@ -684,21 +694,77 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">step_context</span> <span class="o">=</span> <span class="n">_context</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="k">if</span> <span class="n">_context</span> <span class="k">else</span> <span class="p">{}</span>
         <span class="n">step_context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">global_parameters</span>
+        <span class="c1">#   Expose the full run configuration (pipeline block + ordered steps)</span>
+        <span class="c1">#   so steps such as the report writer can reproduce it. Rebuilt from</span>
+        <span class="c1">#   the canonical step list rather than the raw file so it is available</span>
+        <span class="c1">#   whether the pipeline was loaded from YAML or assembled in memory,</span>
+        <span class="c1">#   and is free of comments/blank lines.</span>
+        <span class="n">step_context</span><span class="p">[</span><span class="s2">&quot;pipeline_config&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;pipeline&quot;</span><span class="p">:</span> <span class="nb">dict</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">global_parameters</span><span class="p">),</span>
+            <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="p">[</span>
+                <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">],</span> <span class="s2">&quot;parameters&quot;</span><span class="p">:</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;parameters&quot;</span><span class="p">,</span> <span class="p">{})}</span>
+                <span class="o">|</span> <span class="p">({</span><span class="s2">&quot;diagnostics&quot;</span><span class="p">:</span> <span class="n">s</span><span class="p">[</span><span class="s2">&quot;diagnostics&quot;</span><span class="p">]}</span> <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;diagnostics&quot;</span><span class="p">)</span> <span class="k">else</span> <span class="p">{})</span>
+                <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span>
+            <span class="p">],</span>
+        <span class="p">}</span>
+
+        <span class="c1"># When a report step is in the pipeline, expose the running list of</span>
+        <span class="c1"># captured diagnostic figures so the report writer can embed them.</span>
+        <span class="n">capture</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;_capture_diagnostics&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">capture</span><span class="p">:</span>
+            <span class="n">step_context</span><span class="p">[</span><span class="s2">&quot;captured_diagnostics&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_captured_figures</span>
+
         <span class="n">step</span> <span class="o">=</span> <span class="n">create_step</span><span class="p">(</span><span class="n">step_config</span><span class="p">,</span> <span class="n">step_context</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Executing: </span><span class="si">{</span><span class="n">step</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
+        <span class="c1"># The user&#39;s own diagnostics setting drives interactive display and</span>
+        <span class="c1"># performance logging. Capture mode additionally force-enables the</span>
+        <span class="c1"># diagnostic code path so its figures can be saved for the report,</span>
+        <span class="c1"># without otherwise changing how the step reports performance.</span>
+        <span class="n">user_diagnostics</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">diagnostics</span>
+        <span class="n">captured_images</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">if</span> <span class="n">capture</span><span class="p">:</span>
+            <span class="n">step</span><span class="o">.</span><span class="n">diagnostics</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="n">diagnostic_capture</span><span class="o">.</span><span class="n">make_diagnostics_safe</span><span class="p">(</span><span class="n">step</span><span class="p">)</span>
+
         <span class="k">try</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">step</span><span class="o">.</span><span class="n">diagnostics</span><span class="p">:</span>
+            <span class="n">capture_ctx</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">diagnostic_capture</span><span class="o">.</span><span class="n">capture_figures</span><span class="p">(</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_capture_dir</span><span class="p">,</span>
+                    <span class="n">step</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+                    <span class="n">captured_images</span><span class="p">,</span>
+                    <span class="c1"># Diagnostics were force-enabled only to capture figures for</span>
+                    <span class="c1"># the report; a step the user did not opt into must not dump</span>
+                    <span class="c1"># its textual diagnostics (e.g. the dataset summary) to the</span>
+                    <span class="c1"># console.</span>
+                    <span class="n">suppress_text</span><span class="o">=</span><span class="ow">not</span> <span class="n">user_diagnostics</span><span class="p">,</span>
+                    <span class="c1"># Steps the user explicitly enabled diagnostics on still get</span>
+                    <span class="c1"># their interactive blocking popup (in addition to being</span>
+                    <span class="c1"># saved into the report); force-captured steps stay headless.</span>
+                    <span class="n">interactive</span><span class="o">=</span><span class="n">user_diagnostics</span><span class="p">,</span>
+                <span class="p">)</span>
+                <span class="k">if</span> <span class="n">capture</span>
+                <span class="k">else</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">nullcontext</span><span class="p">()</span>
+            <span class="p">)</span>
+
+            <span class="k">if</span> <span class="n">user_diagnostics</span><span class="p">:</span>
                 <span class="c1"># Time the processing only. When a step generates diagnostics,</span>
                 <span class="c1"># BaseStep stops the timer (report_performance) as plotting</span>
                 <span class="c1"># begins, so a blocking plot left open isn&#39;t counted. This call</span>
                 <span class="c1"># is the idempotent fallback for steps that produce no plot.</span>
                 <span class="n">step</span><span class="o">.</span><span class="n">_diagnostics_start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
                 <span class="n">step</span><span class="o">.</span><span class="n">_diagnostics_reported</span> <span class="o">=</span> <span class="kc">False</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+                <span class="k">with</span> <span class="n">capture_ctx</span><span class="p">:</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
                 <span class="n">step</span><span class="o">.</span><span class="n">report_performance</span><span class="p">()</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">result</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+                <span class="k">with</span> <span class="n">capture_ctx</span><span class="p">:</span>
+                    <span class="n">result</span> <span class="o">=</span> <span class="n">step</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+
+            <span class="k">if</span> <span class="n">captured_images</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_captured_figures</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="p">{</span><span class="s2">&quot;step&quot;</span><span class="p">:</span> <span class="n">step</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="s2">&quot;images&quot;</span><span class="p">:</span> <span class="n">captured_images</span><span class="p">}</span>
+                <span class="p">)</span>
 
             <span class="k">return</span> <span class="n">result</span>
 
@@ -739,8 +805,38 @@
             <span class="p">)</span>
             <span class="k">raise</span> <span class="ne">SystemExit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="kn">from</span><span class="w"> </span><span class="kc">None</span>
 
-        <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="p">)</span></div>
+        <span class="c1"># If the pipeline writes a report, capture each step&#39;s diagnostic plots</span>
+        <span class="c1"># in the background (regardless of that step&#39;s own diagnostics setting)</span>
+        <span class="c1"># so they can be embedded in the report. This exercises every step&#39;s</span>
+        <span class="c1"># diagnostic code, which is why it can slow the run down.</span>
+        <span class="n">report_present</span> <span class="o">=</span> <span class="nb">any</span><span class="p">(</span><span class="n">s</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="n">REPORT_STEP_NAME</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">report_present</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_capture_diagnostics</span> <span class="o">=</span> <span class="kc">True</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_captured_figures</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_capture_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">(</span><span class="n">prefix</span><span class="o">=</span><span class="s2">&quot;pelagos_report_diag_&quot;</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+                <span class="s2">&quot;A report step is enabled: diagnostic plots will be generated in &quot;</span>
+                <span class="s2">&quot;the background for every step that produces one, so the pipeline &quot;</span>
+                <span class="s2">&quot;may run more slowly than usual.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># When capturing for the report, force the headless Agg backend once for</span>
+        <span class="c1"># the whole run (see force_headless_backend). Toggling the backend per</span>
+        <span class="c1"># step can hard-crash on Windows, so it stays on Agg start to finish.</span>
+        <span class="n">backend_ctx</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">diagnostic_capture</span><span class="o">.</span><span class="n">force_headless_backend</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">report_present</span>
+            <span class="k">else</span> <span class="n">contextlib</span><span class="o">.</span><span class="n">nullcontext</span><span class="p">()</span>
+        <span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="n">backend_ctx</span><span class="p">:</span>
+                <span class="k">for</span> <span class="n">step</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">steps</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">_context</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">execute_step</span><span class="p">(</span><span class="n">step</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_context</span><span class="p">)</span>
+        <span class="k">finally</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">report_present</span><span class="p">:</span>
+                <span class="c1">#   Figures have been embedded by the report writer by now.</span>
+                <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_capture_dir</span><span class="p">,</span> <span class="n">ignore_errors</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">_capture_diagnostics</span> <span class="o">=</span> <span class="kc">False</span></div>
 
 
 <div class="viewcode-block" id="Pipeline.generate_config">

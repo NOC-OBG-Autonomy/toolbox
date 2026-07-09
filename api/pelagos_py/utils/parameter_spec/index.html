@@ -365,6 +365,7 @@
 <li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/gen_data/index.html">pelagos_py.steps.input_output.gen_data</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/load_data/index.html">pelagos_py.steps.input_output.load_data</a></li>
 <li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/write_report/index.html">pelagos_py.steps.input_output.write_report</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../../steps/input_output/write_report_python/index.html">pelagos_py.steps.input_output.write_report_python</a></li>
 </ul>
 </details></li>
 <li class="toctree-l2 has-children"><a class="reference internal" href="../../steps/processing/index.html">pelagos_py.steps.processing</a><details><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul>
@@ -399,10 +400,12 @@
 </ul>
 </details></li>
 <li class="toctree-l1 current active has-children"><a class="reference internal" href="../index.html">pelagos_py.utils</a><details open="open"><summary><span class="toctree-toggle" role="presentation"><i class="fa-solid fa-chevron-down"></i></span></summary><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../diagnostic_capture/index.html">pelagos_py.utils.diagnostic_capture</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../diagnostics/index.html">pelagos_py.utils.diagnostics</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../log_levels/index.html">pelagos_py.utils.log_levels</a></li>
 <li class="toctree-l2 current active"><a class="current reference internal" href="#">pelagos_py.utils.parameter_spec</a></li>
 <li class="toctree-l2"><a class="reference internal" href="../qc_handling/index.html">pelagos_py.utils.qc_handling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../yaml_loading/index.html">pelagos_py.utils.yaml_loading</a></li>
 </ul>
 </details></li>
 </ul>
@@ -493,6 +496,20 @@ threshold), since YAML has no way to force a whole-number float.</p></li>
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="pelagos_py.utils.parameter_spec.coerce">
+<span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.parameter_spec.</span></span><span class="sig-name descname"><span class="pre">coerce</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">spec</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/parameter_spec.html#coerce"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.parameter_spec.coerce" title="Link to this definition">#</a></dt>
+<dd><p>Coerce a numeric <em>string</em> to the spec’s declared numeric type.</p>
+<p>Configs are not always parsed by pelagos: a caller may hand the pipeline a
+dict it built itself (or parsed with plain <code class="docutils literal notranslate"><span class="pre">yaml.safe_load</span></code>), in which case
+scientific-notation numbers like <code class="docutils literal notranslate"><span class="pre">3e-2</span></code> arrive as strings (a YAML 1.1
+quirk). When the spec declares a numeric type and does not also accept <code class="docutils literal notranslate"><span class="pre">str</span></code>,
+convert such a string to <code class="docutils literal notranslate"><span class="pre">int</span></code>/<code class="docutils literal notranslate"><span class="pre">float</span></code> so it satisfies the type check
+regardless of how the config was produced.</p>
+<p>Anything that is not a numeric string, or whose spec legitimately accepts a
+string, is returned unchanged.</p>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="pelagos_py.utils.parameter_spec.type_errors">
 <span class="sig-prename descclassname"><span class="pre">pelagos_py.utils.parameter_spec.</span></span><span class="sig-name descname"><span class="pre">type_errors</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">schema</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">params</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#dict" title="(in Python v3.14)"><span class="pre">dict</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#list" title="(in Python v3.14)"><span class="pre">list</span></a><span class="p"><span class="pre">[</span></span><a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><span class="pre">str</span></a><span class="p"><span class="pre">]</span></span></span></span><a class="reference internal" href="../../../../_modules/pelagos_py/utils/parameter_spec.html#type_errors"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.utils.parameter_spec.type_errors" title="Link to this definition">#</a></dt>
 <dd><p>Return <code class="docutils literal notranslate"><span class="pre">&quot;name</span> <span class="pre">(expected</span> <span class="pre">X,</span> <span class="pre">got</span> <span class="pre">Y)&quot;</span></code> messages for type-mismatched params.</p>
@@ -567,6 +584,7 @@ other than the schema consumes (e.g. <code class="docutils literal notranslate">
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.is_required"><code class="docutils literal notranslate"><span class="pre">is_required()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.matches_type"><code class="docutils literal notranslate"><span class="pre">matches_type()</span></code></a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.coerce"><code class="docutils literal notranslate"><span class="pre">coerce()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.type_errors"><code class="docutils literal notranslate"><span class="pre">type_errors()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.resolve"><code class="docutils literal notranslate"><span class="pre">resolve()</span></code></a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.utils.parameter_spec.describe"><code class="docutils literal notranslate"><span class="pre">describe()</span></code></a></li>

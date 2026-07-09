@@ -76,6 +76,7 @@
       "doc_lineno": 305
     }
   ],
+  "api/pelagos_py/steps/input_output/write_report_python/index": [],
   "api/pelagos_py/steps/processing/bbp/index": [
     {
       "source": "- name: \"BBP from Beta\"\n  parameters:\n    apply_to: \"BBP700\"\n    output_as: \"BBP700\"\n    theta: 124\n    xfactor: 1.076\n  diagnostics: false",
@@ -324,11 +325,13 @@
   "api/pelagos_py/steps/templates/blank_qc/index": [],
   "api/pelagos_py/steps/templates/blank_step/index": [],
   "api/pelagos_py/steps/templates/index": [],
+  "api/pelagos_py/utils/diagnostic_capture/index": [],
   "api/pelagos_py/utils/diagnostics/index": [],
   "api/pelagos_py/utils/index": [],
   "api/pelagos_py/utils/log_levels/index": [],
   "api/pelagos_py/utils/parameter_spec/index": [],
   "api/pelagos_py/utils/qc_handling/index": [],
+  "api/pelagos_py/utils/yaml_loading/index": [],
   "api_reference": [],
   "development": [
     {
