@@ -6,11 +6,6 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 
-#   Most of export unit testing is handled second-hand
-#   Might be nice to implement an actual test of the export functionality
-#   As a number of lines remain untested
-#   src/pelagos_py/steps/input_output/export.py                         41     15    63%   87-88, 96, 100, 103, 111, 115, 118-123, 131-133
-
 #   Fake data borrowed from write_report
 @pytest.fixture
 def qc_dataset():
@@ -44,23 +39,24 @@ def step(qc_dataset):
             "output_path": "output.nc",
             "export_format": "netcdf",
             "compression": 4,
-            },
-        )
+        },
+    )
 
-    s.log = MagicMock()
+    s.log = MagicMock() #   TODO: Test diagnostics log using the mock
     s.context = {"data": qc_dataset}
     return s
 
+
 @pytest.mark.parametrize(
-        "export_format,extension,compression",
-            [
-                ("netcdf", "nc", 1),
-                ("netcdf", "nc", 9),
-                ("hdf5", "h5", 4),
-                ("csv", "csv", 4),
-                ("parquet", "parquet", 4),
-            ],
-        )
+    "export_format,extension,compression",
+    [
+        ("netcdf", "nc", 1),
+        ("netcdf", "nc", 9),
+        ("hdf5", "h5", 4),
+        ("csv", "csv", 4),
+        ("parquet", "parquet", 4),
+    ],
+)
 def test_export_formats(step, export_format, extension, compression, tmp_path):
     outfile = tmp_path / f"test.{extension}"
 
@@ -81,23 +77,25 @@ def test_export_formats(step, export_format, extension, compression, tmp_path):
         assert ds["TEMP"].encoding["complevel"] == compression
 
         ds.close()
-    
+
     elif export_format == "csv":
         df = pd.read_csv(outfile)
         assert "TEMP" in df.columns
         assert "TEMP_QC" in df.columns
-    
+
     elif export_format == "parquet":
         df = pd.read_parquet(outfile)
         assert "TEMP" in df.columns
         assert "TEMP_QC" in df.columns
 
+
 def test_qc_history_added(step, qc_dataset):
-    qc = {"temperature": ["range check"]}   #   Can be whatever
+    qc = {"temperature": ["range check"]}  #   Can be whatever
     step.context["qc_history"] = qc
     step.run()
 
     assert qc_dataset.attrs["delayed_qc_history"] == json.dumps(qc)
+
 
 def test_zero_compression_disables_compression(step, tmp_path):
     """Because when compression is set to 0 or not listed, it default to encoding = None"""
@@ -112,6 +110,7 @@ def test_zero_compression_disables_compression(step, tmp_path):
 
     ds.close()
 
+
 #   Test the valueerrors
 def test_invalid_export_format(step):
     step.parameters["export_format"] = "xlsx"
@@ -119,17 +118,22 @@ def test_invalid_export_format(step):
     with pytest.raises(ValueError, match="Unsupported export format"):
         step.run()
 
+
 def test_blank_output_path(step):
     step.parameters["output_path"] = None
 
-    with pytest.raises(ValueError, match="Output path must be specified for data export"):
+    with pytest.raises(
+        ValueError, match="Output path must be specified for data export"
+    ):
         step.run()
+
 
 def test_nonstr_output_path(step):
     step.parameters["output_path"] = 42
 
     with pytest.raises(ValueError, match="Output path must be a string."):
         step.run()
+
 
 def test_bad_compression(step):
     step.parameters["compression"] = -1
