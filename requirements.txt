@@ -22,6 +22,7 @@ pvlib
 tqdm
 glidertools
 ipykernel
+pyarrow
 pytest
 rstcloth
 cartopy
