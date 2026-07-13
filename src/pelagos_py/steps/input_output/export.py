@@ -112,13 +112,13 @@ class ExportStep(BaseStep):
 
         # Export data based on the specified format
         if export_format == "csv":
-            data.to_csv(output_path)
+            data.to_dataframe().to_csv(output_path, index=False)
         elif export_format == "netcdf":
             data.to_netcdf(output_path, engine="netcdf4", encoding=encoding)
         elif export_format == "hdf5":
             data.to_netcdf(output_path, engine="h5netcdf", encoding=encoding)
         elif export_format == "parquet":
-            data.to_parquet(output_path)
+            data.to_dataframe().to_parquet(output_path, index=False)
         else:
             raise ValueError(f"Unsupported export format: {export_format}")
         self.log(f"Data exported successfully to {output_path}")
