@@ -99,6 +99,19 @@ def test_qc_history_added(step, qc_dataset):
 
     assert qc_dataset.attrs["delayed_qc_history"] == json.dumps(qc)
 
+def test_zero_compression_disables_compression(step, tmp_path):
+    """Because when compression is set to 0 or not listed, it default to encoding = None"""
+    outfile = tmp_path / "test.nc"
+
+    step.parameters["output_path"] = str(outfile)
+    step.parameters["compression"] = 0
+    step.run()
+
+    ds = xr.open_dataset(outfile)
+    assert not ds["TEMP"].encoding.get("zlib", False)
+
+    ds.close()
+
 #   Test the valueerrors
 def test_invalid_export_format(step):
     step.parameters["export_format"] = "xlsx"
@@ -116,4 +129,12 @@ def test_nonstr_output_path(step):
     step.parameters["output_path"] = 42
 
     with pytest.raises(ValueError, match="Output path must be a string."):
+        step.run()
+
+def test_bad_compression(step):
+    step.parameters["compression"] = -1
+    with pytest.raises(ValueError, match="Please specify compression from 0-9"):
+        step.run()
+    step.parameters["compression"] = 10
+    with pytest.raises(ValueError, match="Please specify compression from 0-9"):
         step.run()

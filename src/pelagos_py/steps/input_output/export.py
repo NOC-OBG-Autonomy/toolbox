@@ -104,6 +104,10 @@ class ExportStep(BaseStep):
 
         # Build zlib encoding for netcdf/hdf5 (compression=0 disables it)
         if compression:
+            if compression > 9 or compression < 0:
+                raise ValueError(
+                    f"Unsupported compression level: {compression}. Please specify compression from 0-9."
+                )
             encoding = {
                 var: {"zlib": True, "complevel": compression} for var in data.data_vars
             }
