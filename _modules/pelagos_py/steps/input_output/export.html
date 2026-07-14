@@ -431,7 +431,10 @@
 <span class="sd">    output_path : str</span>
 <span class="sd">        Path and file name to output to. The file extension should be included.</span>
 <span class="sd">    export_format : str</span>
-<span class="sd">        Either &quot;netcdf&quot;, &quot;csv&quot;, &quot;hdf5&quot; or &quot;parquet&quot;</span>
+<span class="sd">        Either &quot;netcdf&quot;, &quot;csv&quot;, &quot;hdf5&quot; or &quot;parquet&quot;. Defaults to &quot;netcdf&quot;.</span>
+<span class="sd">    compression : int</span>
+<span class="sd">        zlib compression level for netcdf/hdf5 output: 0 turns compression off,</span>
+<span class="sd">        1 (fastest) to 9 (smallest). Defaults to 4. Ignored for csv/parquet.</span>
 
 <span class="sd">    Examples</span>
 <span class="sd">    --------</span>
@@ -444,6 +447,7 @@
 <span class="sd">            parameters:</span>
 <span class="sd">                output_path: &quot;save/my/data/here.nc&quot;</span>
 <span class="sd">                export_format: &quot;netcdf&quot;</span>
+<span class="sd">                compression: 4</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">step_name</span> <span class="o">=</span> <span class="s2">&quot;Data Export&quot;</span>
@@ -451,7 +455,7 @@
     <span class="n">parameter_schema</span> <span class="o">=</span> <span class="p">{</span>
         <span class="s2">&quot;export_format&quot;</span><span class="p">:</span> <span class="p">{</span>
             <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-            <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="s2">&quot;netcdf&quot;</span><span class="p">,</span>
             <span class="s2">&quot;options&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;csv&quot;</span><span class="p">,</span> <span class="s2">&quot;netcdf&quot;</span><span class="p">,</span> <span class="s2">&quot;hdf5&quot;</span><span class="p">,</span> <span class="s2">&quot;parquet&quot;</span><span class="p">],</span>
             <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Export format compatible with xarray (csv/netcdf/hdf5/parquet).&quot;</span><span class="p">,</span>
         <span class="p">},</span>
@@ -459,6 +463,13 @@
             <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
             <span class="s2">&quot;required&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
             <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;Path the dataset will be exported to.&quot;</span><span class="p">,</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;compression&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+            <span class="s2">&quot;default&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+            <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+            <span class="s2">&quot;max&quot;</span><span class="p">:</span> <span class="mi">9</span><span class="p">,</span>
+            <span class="s2">&quot;description&quot;</span><span class="p">:</span> <span class="s2">&quot;zlib level for netcdf/hdf5 (0 = off, 1-9). Ignored for csv/parquet.&quot;</span><span class="p">,</span>
         <span class="p">},</span>
     <span class="p">}</span>
 
@@ -477,6 +488,7 @@
 
         <span class="n">export_format</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;export_format&quot;</span><span class="p">]</span>
         <span class="n">output_path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;output_path&quot;</span><span class="p">]</span>
+        <span class="n">compression</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parameters</span><span class="p">[</span><span class="s2">&quot;compression&quot;</span><span class="p">]</span>
 
         <span class="c1"># Validate the export format  # TODO: have all of these file types been tested?</span>
         <span class="k">if</span> <span class="n">export_format</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">[</span><span class="s2">&quot;csv&quot;</span><span class="p">,</span> <span class="s2">&quot;netcdf&quot;</span><span class="p">,</span> <span class="s2">&quot;hdf5&quot;</span><span class="p">,</span> <span class="s2">&quot;parquet&quot;</span><span class="p">]:</span>
@@ -489,15 +501,27 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Output path must be a string.&quot;</span><span class="p">)</span>
 
+        <span class="c1"># Build zlib encoding for netcdf/hdf5 (compression=0 disables it)</span>
+        <span class="k">if</span> <span class="n">compression</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">compression</span> <span class="o">&gt;</span> <span class="mi">9</span> <span class="ow">or</span> <span class="n">compression</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Unsupported compression level: </span><span class="si">{</span><span class="n">compression</span><span class="si">}</span><span class="s2">. Please specify compression from 0-9.&quot;</span>
+                <span class="p">)</span>
+            <span class="n">encoding</span> <span class="o">=</span> <span class="p">{</span>
+                <span class="n">var</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;zlib&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;complevel&quot;</span><span class="p">:</span> <span class="n">compression</span><span class="p">}</span> <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">data_vars</span>
+            <span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">encoding</span> <span class="o">=</span> <span class="kc">None</span>
+
         <span class="c1"># Export data based on the specified format</span>
         <span class="k">if</span> <span class="n">export_format</span> <span class="o">==</span> <span class="s2">&quot;csv&quot;</span><span class="p">:</span>
-            <span class="n">data</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">export_format</span> <span class="o">==</span> <span class="s2">&quot;netcdf&quot;</span><span class="p">:</span>
-            <span class="n">data</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;netcdf4&quot;</span><span class="p">)</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;netcdf4&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">encoding</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">export_format</span> <span class="o">==</span> <span class="s2">&quot;hdf5&quot;</span><span class="p">:</span>
-            <span class="n">data</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;h5netcdf&quot;</span><span class="p">)</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">to_netcdf</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">engine</span><span class="o">=</span><span class="s2">&quot;h5netcdf&quot;</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="n">encoding</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">export_format</span> <span class="o">==</span> <span class="s2">&quot;parquet&quot;</span><span class="p">:</span>
-            <span class="n">data</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="n">output_path</span><span class="p">)</span>
+            <span class="n">data</span><span class="o">.</span><span class="n">to_dataframe</span><span class="p">()</span><span class="o">.</span><span class="n">to_parquet</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unsupported export format: </span><span class="si">{</span><span class="n">export_format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Data exported successfully to </span><span class="si">{</span><span class="n">output_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
