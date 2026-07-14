@@ -584,11 +584,42 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">][</span><span class="s2">&quot;filename_core&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">file_path</span><span class="p">)</span><span class="o">.</span><span class="n">stem</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;global_parameters&quot;</span><span class="p">][</span><span class="s2">&quot;source_file&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">file_path</span>
 
+        <span class="bp">self</span><span class="o">.</span><span class="n">normalise_qc_flags</span><span class="p">()</span>
+
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">diagnostics</span><span class="p">:</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">generate_diagnostics</span><span class="p">()</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">context</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">context</span>
+
+<div class="viewcode-block" id="LoadOG1.normalise_qc_flags">
+<a class="viewcode-back" href="../../../../api/pelagos_py/steps/input_output/load_data/index.html#pelagos_py.steps.input_output.load_data.LoadOG1.normalise_qc_flags">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">normalise_qc_flags</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Coerce QC flag variables to integers, mapping NaN to 9 (missing).</span>
+
+<span class="sd">        Raw OG1 files store QC flags as float with NaN (which lines up with</span>
+<span class="sd">        missing measurements). Downstream steps use flags as integer array</span>
+<span class="sd">        indices / dict keys, so normalise them once at load rather than having</span>
+<span class="sd">        each step guard against float NaN flags.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">qc_vars</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span> <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">data_vars</span> <span class="k">if</span> <span class="n">v</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;_QC&quot;</span><span class="p">)]</span>
+        <span class="n">normalised</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">var</span> <span class="ow">in</span> <span class="n">qc_vars</span><span class="p">:</span>
+            <span class="n">flags</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">flags</span><span class="o">.</span><span class="n">dtype</span><span class="o">.</span><span class="n">kind</span> <span class="o">!=</span> <span class="s2">&quot;f&quot;</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="c1"># int8 is plenty for flags 0-9 and keeps QC arrays small.</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">flags</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="mi">9</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">int8</span><span class="p">)</span>
+            <span class="n">normalised</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">var</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">normalised</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">log_warn</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">normalised</span><span class="p">)</span><span class="si">}</span><span class="s2"> QC flag variable(s) were stored as float with &quot;</span>
+                <span class="s2">&quot;NaN values; normalised to integer (NaN flags mapped to 9/missing). &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Affected: </span><span class="si">{</span><span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="nb">sorted</span><span class="p">(</span><span class="n">normalised</span><span class="p">))</span><span class="si">}</span><span class="s2">.&quot;</span>
+            <span class="p">)</span></div>
+
 
 <div class="viewcode-block" id="LoadOG1.generate_diagnostics">
 <a class="viewcode-back" href="../../../../api/pelagos_py/steps/input_output/load_data/index.html#pelagos_py.steps.input_output.load_data.LoadOG1.generate_diagnostics">[docs]</a>

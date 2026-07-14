@@ -513,6 +513,16 @@ the current system time when the pipeline is run.</p></li>
 </div>
 </div>
 <dl class="py method">
+<dt class="sig sig-object py" id="pelagos_py.steps.input_output.load_data.LoadOG1.normalise_qc_flags">
+<span class="sig-name descname"><span class="pre">normalise_qc_flags</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../../../_modules/pelagos_py/steps/input_output/load_data.html#LoadOG1.normalise_qc_flags"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.steps.input_output.load_data.LoadOG1.normalise_qc_flags" title="Link to this definition">#</a></dt>
+<dd><p>Coerce QC flag variables to integers, mapping NaN to 9 (missing).</p>
+<p>Raw OG1 files store QC flags as float with NaN (which lines up with
+missing measurements). Downstream steps use flags as integer array
+indices / dict keys, so normalise them once at load rather than having
+each step guard against float NaN flags.</p>
+</dd></dl>
+
+<dl class="py method">
 <dt class="sig sig-object py" id="pelagos_py.steps.input_output.load_data.LoadOG1.generate_diagnostics">
 <span class="sig-name descname"><span class="pre">generate_diagnostics</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="reference internal" href="../../../../../_modules/pelagos_py/steps/input_output/load_data.html#LoadOG1.generate_diagnostics"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#pelagos_py.steps.input_output.load_data.LoadOG1.generate_diagnostics" title="Link to this definition">#</a></dt>
 <dd><p>Print a structural summary of the loaded dataset.</p>
@@ -552,6 +562,7 @@ was loaded as expected.</p>
   <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
     <ul class="pst-show_toc_level nav section-nav flex-column">
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.input_output.load_data.LoadOG1"><code class="docutils literal notranslate"><span class="pre">LoadOG1</span></code></a><ul class="nav section-nav flex-column">
+<li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.input_output.load_data.LoadOG1.normalise_qc_flags"><code class="docutils literal notranslate"><span class="pre">LoadOG1.normalise_qc_flags()</span></code></a></li>
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#pelagos_py.steps.input_output.load_data.LoadOG1.generate_diagnostics"><code class="docutils literal notranslate"><span class="pre">LoadOG1.generate_diagnostics()</span></code></a></li>
 </ul>
 </li>

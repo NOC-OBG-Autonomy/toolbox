@@ -411,6 +411,8 @@
 <span class="sd">&quot;&quot;&quot;Custom logging levels shared across the pipeline.&quot;&quot;&quot;</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
 
 <div class="viewcode-block" id="STOP">
 <a class="viewcode-back" href="../../../api/pelagos_py/utils/log_levels/index.html#pelagos_py.utils.log_levels.STOP">[docs]</a>
@@ -421,6 +423,62 @@
 <span class="sd">Sits just above ERROR so it always surfaces, and is rendered as &quot;STOP&quot; in logs.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 <span class="n">logging</span><span class="o">.</span><span class="n">addLevelName</span><span class="p">(</span><span class="n">STOP</span><span class="p">,</span> <span class="s2">&quot;STOP&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_supports_color</span><span class="p">(</span><span class="n">stream</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Whether ANSI colour is safe to emit on ``stream``.</span>
+
+<span class="sd">    Only colour a real interactive terminal: skip when output is redirected to</span>
+<span class="sd">    a file/pipe (``isatty()`` is False), when NO_COLOR is set (no-color.org),</span>
+<span class="sd">    or on a dumb terminal. FORCE_COLOR overrides all of these.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;FORCE_COLOR&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;NO_COLOR&quot;</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;TERM&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;dumb&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">stream</span><span class="p">,</span> <span class="s2">&quot;isatty&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">stream</span><span class="o">.</span><span class="n">isatty</span><span class="p">()</span>
+
+
+<div class="viewcode-block" id="ColorFormatter">
+<a class="viewcode-back" href="../../../api/pelagos_py/utils/log_levels/index.html#pelagos_py.utils.log_levels.ColorFormatter">[docs]</a>
+<span class="k">class</span><span class="w"> </span><span class="nc">ColorFormatter</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">Formatter</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Formatter that colours records by level on the console (STOP/ERROR red,</span>
+<span class="sd">    WARNING yellow).</span>
+
+<span class="sd">    Colour is only emitted when the target stream is an interactive terminal</span>
+<span class="sd">    that supports it (see :func:`_supports_color`), so redirected output and</span>
+<span class="sd">    dumb terminals stay clean plain text. Intended for stream handlers only;</span>
+<span class="sd">    the file handler keeps a plain formatter so log files carry no escape codes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_RESET</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[0m&quot;</span>
+    <span class="n">_RED</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[31m&quot;</span>
+    <span class="n">_YELLOW</span> <span class="o">=</span> <span class="s2">&quot;</span><span class="se">\033</span><span class="s2">[33m&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_use_color</span> <span class="o">=</span> <span class="n">_supports_color</span><span class="p">(</span><span class="n">stream</span> <span class="k">if</span> <span class="n">stream</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">sys</span><span class="o">.</span><span class="n">stderr</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_color_for</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">levelno</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return the ANSI colour for a level, or None to leave it uncoloured.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">levelno</span> <span class="o">&gt;=</span> <span class="n">logging</span><span class="o">.</span><span class="n">ERROR</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_RED</span>
+        <span class="k">if</span> <span class="n">levelno</span> <span class="o">&gt;=</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARNING</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_YELLOW</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+<div class="viewcode-block" id="ColorFormatter.format">
+<a class="viewcode-back" href="../../../api/pelagos_py/utils/log_levels/index.html#pelagos_py.utils.log_levels.ColorFormatter.format">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">format</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">record</span><span class="p">):</span>
+        <span class="n">message</span> <span class="o">=</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">format</span><span class="p">(</span><span class="n">record</span><span class="p">)</span>
+        <span class="n">color</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_color_for</span><span class="p">(</span><span class="n">record</span><span class="o">.</span><span class="n">levelno</span><span class="p">)</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_use_color</span> <span class="k">else</span> <span class="kc">None</span>
+        <span class="k">if</span> <span class="n">color</span><span class="p">:</span>
+            <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">color</span><span class="si">}{</span><span class="n">message</span><span class="si">}{</span><span class="bp">self</span><span class="o">.</span><span class="n">_RESET</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="n">message</span></div>
+</div>
+
 </pre></div>
 
                 </article>
