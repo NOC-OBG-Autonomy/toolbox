@@ -57,22 +57,36 @@ class ColorFormatter(logging.Formatter):
     _RESET = "\033[0m"
     _RED = "\033[31m"
     _YELLOW = "\033[33m"
+    _GREY = "\033[90m"
+
+    #: Colours a record may request explicitly via ``extra={"color": ...}`` (e.g.
+    #: a step greying its own verbose output). Unknown names leave it uncoloured.
+    _NAMED_COLORS = {"grey": _GREY, "gray": _GREY, "red": _RED, "yellow": _YELLOW}
 
     def __init__(self, *args, stream=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._use_color = _supports_color(stream if stream is not None else sys.stderr)
 
-    def _color_for(self, levelno):
-        """Return the ANSI colour for a level, or None to leave it uncoloured."""
-        if levelno >= logging.ERROR:
+    def _color_for(self, record):
+        """Return the ANSI colour for a record, or None to leave it uncoloured.
+
+        An explicit ``color`` on the record (set via
+        ``logger.info(..., extra={"color": "grey"})``) wins, so a step can mark
+        its own output; otherwise colour is chosen by level (ERROR/STOP red,
+        WARNING yellow).
+        """
+        requested = getattr(record, "color", None)
+        if requested:
+            return self._NAMED_COLORS.get(requested)
+        if record.levelno >= logging.ERROR:
             return self._RED
-        if levelno >= logging.WARNING:
+        if record.levelno >= logging.WARNING:
             return self._YELLOW
         return None
 
     def format(self, record):
         message = super().format(record)
-        color = self._color_for(record.levelno) if self._use_color else None
+        color = self._color_for(record) if self._use_color else None
         if color:
             return f"{color}{message}{self._RESET}"
         return message
