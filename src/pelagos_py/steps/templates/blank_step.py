@@ -47,6 +47,15 @@ class BlankStep(BaseStep, QCHandlingMixin):
 
         # EXAMPLE: self.data["C"] = self.data["A"] * self.data["B"]
 
+        # If the step DERIVES anything from more than one sample (a rolling window,
+        # a fit, a mean/median/max, a peak), flagged samples must not feed it. Use
+        # self.calculation_mask() to exclude them from the derivation while still
+        # writing the result to every sample. A pure per-point formula (as above)
+        # needs none of this - generate_qc already propagates its inputs' flags.
+        # EXAMPLE: usable = self.calculation_mask(["A", "B"])
+        #          reference = np.nanmedian(self.data["A"].values[usable])
+        #          self.data["C"] = self.data["A"] - reference
+
         self.reconstruct_data()
         self.update_qc()
 

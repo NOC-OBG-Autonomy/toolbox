@@ -68,7 +68,15 @@ def _ols_slope(x, y):
     Python exception) on some Windows/OpenBLAS builds when given degenerate
     input (e.g. near-duplicate x-values). A plain OLS formula avoids that
     codepath entirely for what is only ever a 1D slope.
+
+    Non-finite pairs are dropped rather than propagated, so a single NaN cannot
+    turn the whole fit into NaN.
     """
+    finite = np.isfinite(x) & np.isfinite(y)
+    x, y = x[finite], y[finite]
+    if x.size < 2:
+        return 0.0
+
     x = x - x.mean()
     denom = (x * x).sum()
     return float((x * (y - y.mean())).sum() / denom) if denom else 0.0
@@ -285,7 +293,11 @@ def find_profiles(df_raw, depth_col, time_window_seconds, target_transect_phase,
         d_next = df.loc[idx + 1, depth_col] if idx < len(df) - 1 else curr_d
         
         raw_subset = mapped_df[mapped_mask]
-        
+
+        # No usable depth in the bin -> no inflection sample to mark.
+        if raw_subset[depth_col].isna().all():
+            continue
+
         if curr_d >= (d_prev + d_next) / 2:
             extreme_idx = raw_subset[depth_col].idxmax()
         else:
@@ -579,6 +591,10 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
     }
 
     def run(self):
+        """Samples whose flags fall in ``calculation_flag_filter`` (by default
+        probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) take
+        no part in detecting the profiles, so a bad pressure reading cannot invent an
+        inflection. Every sample is still assigned to a profile."""
         self.log("Attempting to designate profile numbers, cycles, directions, and phases")
         self.check_data()
         self.filter_qc()
@@ -612,6 +628,11 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
 
         cols_to_extract = ["TIME", depth_col]
         df_raw = self.data[cols_to_extract].to_dataframe().reset_index()
+
+        # Flagged samples must not shape the profile detection, which smooths,
+        # differentiates and peak-finds along depth. Every sample is still labelled:
+        # the results are merged back on TIME, which is untouched here.
+        df_raw.loc[~self.calculation_mask(["TIME", depth_col]), depth_col] = np.nan
 
         df_final = find_profiles(
             df_raw, depth_col, time_window_seconds, target_transect_phase, 
