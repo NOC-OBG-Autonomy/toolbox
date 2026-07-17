@@ -24,8 +24,10 @@ that chooses the behaviour: ``outside`` flags data outside the band (a good band
 bound *order* is used as a fallback (ascending ``[low, high]`` -> outside, descending
 ``[high, low]`` -> inside). A flag may list several ranges so the same flag can cover
 more than one band. The test can also propagate a variable's flags onto companion
-variables (e.g. flag PRES and TEMP bad whenever CNDC is bad), limit the checks to a
-DEPTH window, and plot every flagged variable when diagnostics are enabled.
+variables (e.g. flag PRES and TEMP bad whenever CNDC is bad) either alongside the
+source's own flags (``also_flag``) or in place of them (``flag_instead``, e.g. flag
+CHLA by DEPTH without flagging DEPTH itself), limit the checks to a DEPTH window, and
+plot every flagged variable when diagnostics are enabled.
 """
 
 #### Mandatory imports ####
@@ -106,7 +108,8 @@ class range_qc(BaseQC):
 
     Target Variable: Any
     Flag Number: Any (user-defined)
-    Variables Flagged: Any (the tested variables, plus any ``also_flag`` companions)
+    Variables Flagged: Any (the tested variables, minus any ``flag_instead`` sources,
+    plus any ``also_flag``/``flag_instead`` companions)
 
     EXAMPLE
     -------
@@ -131,6 +134,21 @@ class range_qc(BaseQC):
                   CNDC: [PRES, TEMP]    # CNDC's flags propagate onto PRES & TEMP (worst wins)
                 test_depth_range: [0, 100]    # OPTIONAL: only check this DEPTH window
           diagnostics: true             # plots every flagged variable, coloured by flag
+
+    Flagging one variable by another's range (``flag_instead``) — here CHLA is judged
+    by DEPTH (probably-bad in the quenched top 5 m, probably-good below it) while DEPTH
+    itself is left unflagged::
+
+        - name: "Apply QC"
+          parameters:
+            qc_settings:
+              range qc:
+                variable_ranges:
+                  DEPTH:
+                    3: [0, 5, inside]     # top 5 m -> probably bad (correctable)
+                    2: [0, 5, outside]    # deeper   -> probably good
+                flag_instead:
+                  DEPTH: [CHLA]           # DEPTH's flags go onto CHLA; no DEPTH_QC written
     """
 
     qc_name = "range qc"
@@ -155,6 +173,13 @@ class range_qc(BaseQC):
                            "{'CNDC': ['PRES', 'TEMP']}. Merged with the Argo matrix so the worst "
                            "flag wins.",
         },
+        "flag_instead": {
+            "type": dict,
+            "default": {},
+            "description": "Like also_flag, but the source variable's own flags are not written, e.g. "
+                           "{'DEPTH': ['CHLA']} flags CHLA by DEPTH's ranges while leaving DEPTH "
+                           "unflagged.",
+        },
         "test_depth_range": {
             "type": list,
             "default": None,
@@ -167,8 +192,19 @@ class range_qc(BaseQC):
 
         if self.also_flag is None:
             self.also_flag = {}
+        if self.flag_instead is None:
+            self.flag_instead = {}
 
         self.tested_variables = list(self.variable_ranges.keys())
+
+        # flag_instead sources are only a means of flagging their companions, so they
+        # must define ranges but never appear in the outputs.
+        for var in self.flag_instead:
+            if var not in self.variable_ranges:
+                raise ValueError(
+                    f"[{self.qc_name}] flag_instead source {var!r} has no entry in "
+                    f"variable_ranges; give it ranges or remove it."
+                )
 
         # Flags become QC values that Apply QC (and this class's also_flag
         # propagation) merges via the Argo 10x10 matrix, so they must be integer
@@ -186,10 +222,15 @@ class range_qc(BaseQC):
         if self.test_depth_range is not None:
             self.required_variables.append("DEPTH")
 
-        # Outputs are the tested variables plus any companions they propagate onto.
+        # Outputs are the tested variables plus any companions they propagate onto,
+        # less the flag_instead sources (tested only to flag their companions).
         self.qc_outputs = list(
-            {f"{var}_QC" for var in self.tested_variables}
-            | {f"{var}_QC" for var in sum(self.also_flag.values(), [])}
+            (
+                {f"{var}_QC" for var in self.tested_variables}
+                | {f"{var}_QC" for var in sum(self.also_flag.values(), [])}
+                | {f"{var}_QC" for var in sum(self.flag_instead.values(), [])}
+            )
+            - {f"{var}_QC" for var in self.flag_instead}
         )
 
     # Keyword aliases (any capitalisation) that force a band's behaviour.
@@ -294,13 +335,18 @@ class range_qc(BaseQC):
         # Companions that are not themselves tested start from "no QC" (0), so they
         # mirror the source's flags; Apply QC then merges the result with their existing
         # flags.
-        for var, companions in self.also_flag.items():
-            src = qc_arrays.get(var)
-            if src is None:
-                continue
-            for companion in companions:
-                base = qc_arrays.get(companion, np.zeros(n, dtype=int))
-                qc_arrays[companion] = QC_COMBINATRIX[base, src]
+        for mapping in (self.also_flag, self.flag_instead):
+            for var, companions in mapping.items():
+                src = qc_arrays.get(var)
+                if src is None:
+                    continue
+                for companion in companions:
+                    base = qc_arrays.get(companion, np.zeros(n, dtype=int))
+                    qc_arrays[companion] = QC_COMBINATRIX[base, src]
+
+        # Drop the flag_instead sources now their flags have been propagated.
+        for var in self.flag_instead:
+            qc_arrays.pop(var, None)
 
         self.flags = xr.Dataset(coords={"N_MEASUREMENTS": self.data["N_MEASUREMENTS"]})
         for var, qc in qc_arrays.items():
@@ -313,8 +359,9 @@ class range_qc(BaseQC):
 
         # Auto-plot every variable this test flagged: the tested variables first
         # (they get range lines), then any companions it propagated onto.
+        # (flag_instead sources drop out below: they have no flags in self.flags.)
         plot_order = list(self.tested_variables)
-        for companion in sum(self.also_flag.values(), []):
+        for companion in sum(self.also_flag.values(), []) + sum(self.flag_instead.values(), []):
             if companion not in plot_order:
                 plot_order.append(companion)
         plot_vars = [

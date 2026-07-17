@@ -54,6 +54,11 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
       ``1`` where it is at or below the MLD (deeper), and ``NaN`` where the MLD is
       undefined for that measurement.
 
+    Samples whose flags fall in ``calculation_flag_filter`` (by default
+    probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) take no
+    part in the search above, so a bad density value cannot place the MLD. Both
+    derived variables are still written for every measurement in the profile.
+
     Parameters
     ----------
     method : str, optional
@@ -128,6 +133,15 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         depth = self.data["DEPTH"].values
         threshold_values = self.data[self.threshold_variable].values
 
+        # Flagged samples must not influence where the MLD sits, so the search below
+        # runs on NaN-masked copies. MLD/MLD_BOOL are still assigned to every sample
+        # in the profile, using the unmasked depth.
+        usable = self.calculation_mask(
+            ["PROFILE_NUMBER", "DEPTH", self.threshold_variable]
+        )
+        search_depth = np.where(usable, depth, np.nan)
+        search_values = np.where(usable, threshold_values, np.nan)
+
         mld = np.full(profile_number.shape, np.nan)
         mld_bool = np.full(profile_number.shape, np.nan)
 
@@ -136,7 +150,9 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
             profile_numbers, colour="green", desc="\033[97mProgress\033[0m", unit="prof"
         ):
             indices = np.where(profile_number == pn)[0]
-            profile_mld = self._profile_mld(depth[indices], threshold_values[indices])
+            profile_mld = self._profile_mld(
+                search_depth[indices], search_values[indices]
+            )
             if not np.isfinite(profile_mld):
                 continue
 

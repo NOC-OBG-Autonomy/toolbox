@@ -91,8 +91,8 @@ steps:
     diagnostics: false
 
   # Global range test on the raw CHLA: probably-bad (3) outside 0.14-50,
-  # bad (4) outside 0-100. Most-severe flag wins on overlap, so e.g. a
-  # negative value is 4 and a 0.1 value is 3; anything in-band is good (1).
+  # bad (4) outside -0.2-100. Most-severe flag wins on overlap, so e.g. a
+  # -0.5 value is 4 and a 0.1 value is 3; anything in-band is good (1).
   - name: Apply QC
     parameters:
       qc_settings:
@@ -100,7 +100,7 @@ steps:
           variable_ranges:
             CHLA:
               3: [0.14, 50, outside]
-              4: [0, 100, outside]
+              4: [-0.2, 100, outside]
     diagnostics: false
 
   # Spike test on CHLA (per-profile MAD-style residual test).
@@ -119,9 +119,28 @@ steps:
       depth_threshold: 950
     diagnostics: false
 
+  # Flag CHLA by DEPTH rather than by its own value: the top 5 m is unstable, so
+  # mark it probably-bad-but-correctable (3) and everything deeper probably-good
+  # (2). DEPTH itself is not flagged, and the Argo merge means the 2 can't
+  # downgrade a 3/4 from the range or spike tests above. The quenching step below
+  # then leaves the top 5 m out of its calculations while still correcting it.
+  # CHLA_ADJUSTED is flagged too, not just CHLA: Deep Correction has already run,
+  # so the quenching step reads CHLA_ADJUSTED and gates on CHLA_ADJUSTED_QC.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            DEPTH:
+              3: [0, 5, inside]
+              2: [0, 5, outside]
+          flag_instead:
+            DEPTH: [CHLA, CHLA_ADJUSTED]
+    diagnostics: false
+
   - name: CHLA Quenching
     parameters:
-      method: thomalla2018
+      method: thomalla2017
     diagnostics: true
 
   # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep

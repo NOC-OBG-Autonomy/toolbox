@@ -234,12 +234,12 @@ steps:
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The
-# thomalla2018 method builds a per-night fluorescence:backscatter ratio profile
+# thomalla2017 method builds a per-night fluorescence:backscatter ratio profile
 # and applies it to the following day's profiles, so it needs the BBP and PAR
 # variables produced/loaded above.
   - name: CHLA Quenching
     parameters:
-      method: thomalla2018     # Per-night fl:bbp ratio profile (needs BBP + PAR)
+      method: thomalla2017     # Per-night fl:bbp ratio profile (needs BBP + PAR)
       apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
     diagnostics: false
 

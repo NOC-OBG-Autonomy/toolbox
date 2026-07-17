@@ -70,6 +70,11 @@ class deep_correction(BaseStep, QCHandlingMixin):
     A ``dark_value`` supplied via config skips this estimation and is subtracted
     directly.
 
+    Samples whose flags fall in ``calculation_flag_filter`` (by default
+    probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) are
+    left out of the estimate above, but the dark value is still subtracted from
+    them — they just cannot bias it.
+
     Parameters
     ----------
     name : str
@@ -225,6 +230,11 @@ class deep_correction(BaseStep, QCHandlingMixin):
             )
 
         df = self.data[["PROFILE_NUMBER", depth, var]].to_pandas()
+
+        # Flagged samples must not inform the dark value, but must still be
+        # corrected by it, so they are dropped here rather than from self.data.
+        df.loc[~self.calculation_mask(["PROFILE_NUMBER", depth, var]), var] = np.nan
+
         df = df.dropna(subset=["PROFILE_NUMBER", depth])
 
         # Profiles reaching past the threshold, in order of occurrence. Reaching

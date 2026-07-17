@@ -74,6 +74,59 @@ def test_computes_dark_value_and_creates_adjusted():
     )
 
 
+def _corrupt_deep(data, profiles):
+    """Wreck the deep, signal-free region of ``profiles`` and flag it bad (4).
+
+    Returns the boolean mask of the corrupted samples.
+    """
+    bad = np.isin(data["PROFILE_NUMBER"].values, profiles) & (data["PRES"].values > 950)
+    assert bad.any()
+    data["CHLA"].values[bad] = -20.0
+    data["CHLA_QC"].values[bad] = 4
+    return bad
+
+
+def test_flagged_values_are_excluded_from_the_dark_value_but_still_corrected():
+    """Bad deep values must not drag the dark value, yet must still be corrected."""
+    ctx = make_context(dark=0.7)
+    data = ctx["data"]
+
+    # Corrupt the deep, signal-free region of most profiles and flag it bad (4).
+    # The dark value is a median of per-profile minima, so the corruption has to
+    # outnumber the clean profiles for its exclusion to be observable at all.
+    bad = _corrupt_deep(data, profiles=(0, 1, 2, 3))
+
+    step = make_step({"apply_to": "CHLA"}, ctx)
+    out = step.run()
+
+    # The dark value comes from the two clean profiles; the -20 values would
+    # otherwise supply four profile minima and take over the median.
+    assert step.dark_value == pytest.approx(0.7, abs=0.1)
+    # Every sample is still corrected, flagged ones included.
+    assert np.allclose(
+        out["data"]["CHLA_ADJUSTED"].values,
+        out["data"]["CHLA"].values - step.dark_value,
+        equal_nan=True,
+    )
+    assert np.isfinite(out["data"]["CHLA_ADJUSTED"].values[bad]).all()
+
+
+def test_calculation_flag_filter_can_be_overridden():
+    """An empty calculation_flag_filter opts out, letting flagged data back in."""
+    ctx = make_context(dark=0.7)
+    _corrupt_deep(ctx["data"], profiles=(0, 1, 2, 3))
+
+    step = make_step(
+        {"apply_to": "CHLA", "qc_handling_settings": {"calculation_flag_filter": []}},
+        ctx,
+    )
+    step.run()
+
+    # With nothing excluded the corrupted profiles supply four -20 minima, which
+    # take over the median and wreck the dark value.
+    assert step.dark_value == pytest.approx(-20.0, abs=0.5)
+
+
 def test_uses_config_dark_value_directly():
     """A dark_value from config is subtracted as-is, with no estimation."""
     ctx = make_context(dark=0.7)

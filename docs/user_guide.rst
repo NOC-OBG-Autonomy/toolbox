@@ -246,6 +246,15 @@ To use QC filtering, the step config must specify ``qc_handling_settings``:
              3: 8
              4: 8
              9: 8
+           # [calculation_flag_filter]:
+           #   Flags a step's calculations ignore (defaults to [3, 4, 9]). Unlike
+           #   flag_filter_settings this does not remove the data: the samples are
+           #   still corrected, they just do not inform the correction. E.g. Deep
+           #   Correction leaves bad values out of the dark-value estimate but
+           #   still subtracts the dark value from them. Set to [] to opt out.
+           #   Steps opt in by calling self.calculation_mask([...]) with the
+           #   variables whose flags should gate the calculation.
+           calculation_flag_filter: [3, 4, 9]
 
 How to add a new QC check
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

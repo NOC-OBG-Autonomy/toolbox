@@ -19,6 +19,12 @@
 import numpy as np
 import xarray as xr
 
+#: Flags a step's calculations ignore unless ``calculation_flag_filter`` says
+#: otherwise: probably-bad (3), bad (4) and missing (9). Distinct from
+#: ``flag_filter_settings``, which removes samples from processing entirely —
+#: these samples are still corrected, they just don't inform the correction.
+DEFAULT_CALCULATION_FLAGS = [3, 4, 9]
+
 
 class QCHandlingMixin:
     def __init__(self):
@@ -26,6 +32,13 @@ class QCHandlingMixin:
         qc_settings = self.parameters.get("qc_handling_settings") or {}
         self.filter_settings = qc_settings.get("flag_filter_settings") or {}
         self.behaviour = qc_settings.get("reconstruction_behaviour") or "reinsert"
+
+        calculation_flags = qc_settings.get("calculation_flag_filter")
+        self.calculation_flag_filter = (
+            list(DEFAULT_CALCULATION_FLAGS)
+            if calculation_flags is None
+            else list(calculation_flags)
+        )
 
         self.flag_mapping = {flag: flag for flag in list(range(10))}
         if user_mappings := qc_settings.get("flag_mapping"):
@@ -81,6 +94,52 @@ class QCHandlingMixin:
 
             # nan-out the bad flagged data
             self.data[var] = self.data[var].where(mask, np.nan)
+
+    def calculation_mask(self, variables):
+        """
+        Boolean mask of the samples a step may compute from.
+
+        A sample is usable only where *every* listed variable carries a flag outside
+        ``calculation_flag_filter`` (by default probably-bad (3), bad (4) and missing
+        (9)). Unlike :meth:`filter_qc`, this does not touch ``self.data`` — the caller
+        applies it to whatever it computes its statistics from, so the excluded samples
+        still receive the step's correction, they just don't inform it. A variable with
+        no ``_QC`` companion contributes nothing to the mask.
+
+        parameters
+        ----------
+        variables : list of str
+            Variables whose flags gate the calculation, e.g. the inputs it reads.
+
+        returns
+        -------
+        numpy.ndarray
+            Boolean array over N_MEASUREMENTS; True where the sample is usable.
+        """
+        mask = np.ones(self.data.sizes["N_MEASUREMENTS"], dtype=bool)
+        if not self.calculation_flag_filter:
+            return mask
+
+        ungated = []
+        for var in variables:
+            if f"{var}_QC" not in self.data:
+                ungated.append(var)
+                continue
+            mask &= ~np.isin(self.data[f"{var}_QC"].values, self.calculation_flag_filter)
+
+        if ungated:
+            self.log(
+                f"No QC found for {ungated}; their values cannot be excluded from "
+                "this step's calculations."
+            )
+        n_excluded = int((~mask).sum())
+        if n_excluded:
+            self.log(
+                f"Excluding {n_excluded} of {mask.size} samples flagged "
+                f"{self.calculation_flag_filter} in {list(variables)} from this "
+                "step's calculations (they are still corrected)."
+            )
+        return mask
 
     def reconstruct_data(self):
         """

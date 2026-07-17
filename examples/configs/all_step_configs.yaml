@@ -208,6 +208,12 @@ steps:
           #   Flags are merged onto companions (Argo matrix) so the worst flag wins.
           also_flag:
             PRES: [CNDC, TEMP]
+          # [flag_instead]:
+          #   As also_flag, but the source variable's own flags are NOT written - it is tested only
+          #   to flag its companions. eg. to flag CHLA by DEPTH (bad in the top 5m, good below)
+          #   without flagging DEPTH itself:
+          #     variable_ranges: {DEPTH: {3: [0, 5, inside], 2: [0, 5, outside]}}
+          #     flag_instead: {DEPTH: [CHLA]}
           # [diagnostics]:
           #   When the Apply QC step has diagnostics enabled, every flagged variable is plotted
           #   coloured by flag number (no separate 'plot' parameter is needed).
@@ -310,6 +316,13 @@ steps:
           3: 8
           4: 8
           9: 8
+        # [calculation_flag_filter]:
+        #   Flags that a step's calculations ignore (defaults to [3, 4, 9]). Unlike flag_filter_settings this does
+        #   not remove the data: the samples are still corrected, they just don't inform the correction. Eg. Deep
+        #   Correction leaves bad values out of the dark value estimate but still subtracts the dark value from
+        #   them, and CHLA Quenching won't use them to find the quenching depth. Set to [] to opt out.
+        #   Used by: Deep Correction, Mixed Layer Depth, CHLA Quenching.
+        calculation_flag_filter: [3, 4, 9]
 
 # Interpolate Data (src/pelagos_py/steps/processing/interpolate_data.py):
 # Interpolates over nan values. Paired with QC handling allowing "bad data" to be replaced with nans and interpolated over.
@@ -483,13 +496,19 @@ steps:
     parameters:
       # [method]:
       #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
-      #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018' and
-      #   'terrats2020' (backscatter-based, need BBP + PAR + MLD), 'hemsley2015'
-      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2018'
+      #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018'
+      #   (backscatter-based, needs BBP + PAR + MLD; see 'hybrid'), 'hemsley2015'
+      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2017'
       #   (per-night fl:bbp ratio profile, needs BBP + PAR), 'sackmann2008' (max
       #   fl:bbp ratio within the MLD, needs BBP + MLD) and 'swart2015' (max fl:bbp
       #   ratio within the euphotic zone, needs BBP + PAR).
       method: xing2012
+      # [hybrid]:
+      #   Only used when method is 'xing2018'. When true (the default), shallow-mixing
+      #   profiles (iPAR=15 depth > MLD) use the Terrats et al. (2020) X18_S08 hybrid
+      #   instead of Xing 2018; deep-mixing profiles use Xing 2018 either way. When
+      #   false, Xing 2018 is applied to every profile.
+      hybrid: true
       # [apply_to]:
       #   Name of the variable to apply the correction to.
       apply_to: CHLA
@@ -508,7 +527,7 @@ steps:
       #   Only used when interpolate_par is true: a cast is filled only if a
       #   valid-PAR cast exists within this many hours on at least one side.
       interpolate_par_max_gap_hours: 12.0
-      # Note: the MLD-based methods ('xing2012'/'xing2018'/'terrats2020'/'sackmann2008')
+      # Note: the MLD-based methods ('xing2012'/'xing2018'/'sackmann2008')
       #   read the 'MLD' variable produced by a preceding 'Mixed Layer Depth' step;
       #   configure the MLD method and thresholds there, not here.
     diagnostics: false

@@ -124,7 +124,7 @@ steps:
   # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
   # CHLA Quenching step below.
   - name: Mixed Layer Depth
-    diagnostics: false
+    diagnostics: true
 
   # Range test on the raw CHLA before correction: probably-bad (3) outside
   # 0-15, bad (4) outside -1-20 mg m-3.
@@ -155,12 +155,12 @@ steps:
       dark_value: null
       depth_var: PRES
       depth_threshold: 950
-    diagnostics: false
+    diagnostics: true
 
   - name: CHLA Quenching
     parameters:
-      method: thomalla2018
-    diagnostics: false
+      method: thomalla2017
+    diagnostics: true
 
   # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep
   # and quenching corrections pushed any values out of range.
