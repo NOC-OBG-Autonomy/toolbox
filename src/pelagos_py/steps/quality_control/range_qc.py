@@ -87,9 +87,9 @@ class range_qc(BaseQC):
     - **``[low, high, "outside"]``** — a *good* band; data ``< low`` or ``> high``
       gets the flag. (The old "gross range" behaviour.) Accepts ``outside``, ``out``
       or ``o`` (any capitalisation).
-    - **``[low, high, "inside"]``** — an *impossible* band; data strictly between the
-      two bounds gets the flag. (The old "impossible range" behaviour.) Accepts
-      ``inside``, ``in`` or ``i`` (any capitalisation).
+    - **``[low, high, "inside"]``** — an *impossible* band; data between the two bounds,
+      inclusive of the bounds themselves, gets the flag. (The old "impossible range"
+      behaviour.) Accepts ``inside``, ``in`` or ``i`` (any capitalisation).
     - **A single scalar** ``value`` — flags exact matches (``data == value``). Handy
       for fill/filler values, e.g. ``4: 0.0`` to flag a pressure of exactly ``0`` as
       bad.
@@ -261,8 +261,8 @@ class range_qc(BaseQC):
 
         - A single scalar flags exact matches (e.g. a fill value such as ``0``).
         - ``[low, high, 'outside']`` is a good band: values outside it are flagged.
-        - ``[low, high, 'inside']`` is an impossible band: values strictly between the
-          bounds are flagged.
+        - ``[low, high, 'inside']`` is an impossible band: values between the bounds,
+          inclusive of the bounds themselves, are flagged.
         - When no keyword is given the order decides: an ascending ``[low, high]`` is a
           good band (flag outside), a descending ``[high, low]`` an impossible band
           (flag inside).
@@ -299,8 +299,8 @@ class range_qc(BaseQC):
 
         low, high = (a, b) if a <= b else (b, a)
         if mode == "outside":
-            return (vals < low) | (vals > high)  # good band -> flag outside
-        return (vals > low) & (vals < high)  # impossible band -> flag inside
+            return (vals < low) | (vals > high)  # good band -> flag outside (bounds good)
+        return (vals >= low) & (vals <= high)  # impossible band -> flag inside (bounds incl.)
 
     def return_qc(self):
         n = len(self.data["N_MEASUREMENTS"])

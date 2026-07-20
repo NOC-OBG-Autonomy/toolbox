@@ -62,6 +62,7 @@ VARIABLE_PALETTES = {
     "PRAC_SALINITY": "salinity",
     "ABS_SALINITY": "salinity",
     "DENSITY": "density",
+    "SIGMA0": "density",
     "DOXY": "oxygen",
     "CHLA": "chlorophyll",
     "CHLA_ADJUSTED": "chlorophyll",

@@ -202,6 +202,12 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
               filter_window_size: 21
             diagnostics: false
 
+    Samples whose flags fall in ``calculation_flag_filter`` (by default probably-bad
+    (3), bad (4) and missing (9); see ``qc_handling_settings``) inform neither the
+    optimal-lag estimate nor the interpolants the two corrections are built from, so a
+    bad conductivity or temperature cannot bend its neighbours' correction. Both
+    corrections are still evaluated at every sample.
+
     References
     ----------
     .. [1] Morison, J., Andersen, R., Larson, N., D'Asaro, E., & Boyd, T. (1994).
@@ -242,6 +248,14 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
         # Filter user-specified flags
         self.filter_qc()
+
+        # Flagged samples must not anchor the interpolants or inform the lag estimate
+        # below; both corrections are still evaluated at every sample. Each input is
+        # gated on its own flags, so a lag estimate combining them drops a sample if
+        # any one is flagged.
+        self._usable_ct = self.calculation_mask(["CNDC", "TEMP", "PRES"])
+        self._usable_cndc = self.calculation_mask(["CNDC"])
+        self._usable_temp = self.calculation_mask(["TEMP"])
 
         # Correct conductivity-temperature response time misalignment (C-T Lag)
         self.correct_ct_lag()
@@ -330,6 +344,21 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
                 continue
 
             profile = self.data.isel(N_MEASUREMENTS=prof_indices)
+
+            # The lag is derived entirely from these three, so flagged samples are
+            # NaN'd out of the estimate. The lag itself is still applied to the whole
+            # record below.
+            usable = self._usable_ct[prof_indices]
+            profile = profile.assign(
+                **{
+                    var: (
+                        profile[var].dims,
+                        np.where(usable, profile[var].values, np.nan),
+                    )
+                    for var in ("CNDC", "TEMP", "PRES")
+                }
+            )
+
             valid_times = profile[self.time_col].dropna(dim="N_MEASUREMENTS")
 
             if len(valid_times) > 0:
@@ -373,9 +402,20 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             data_subset[self.time_col] - t0
         ).dt.total_seconds()
 
+        # Only usable samples anchor the interpolant, so a flagged conductivity cannot
+        # bend the time-shifted value of its neighbours. It is still evaluated at every
+        # valid sample below, so flagged ones are shifted like any other.
+        anchors = self._usable_cndc[np.where(valid_data_mask)[0]]
+        if anchors.sum() < 2:
+            self.log(
+                "Fewer than two usable CNDC samples for the CT lag shift "
+                f"(flags {self.calculation_flag_filter} excluded). Skipping."
+            )
+            return
+
         CNDC_from_TIME = interpolate.interp1d(
-            data_subset["ELAPSED_TIME[s]"].values,
-            data_subset["CNDC"].values,
+            data_subset["ELAPSED_TIME[s]"].values[anchors],
+            data_subset["CNDC"].values[anchors],
             bounds_error=False,
         )
         shifted_time = data_subset["ELAPSED_TIME[s]"].values + self.ct_lag_median
@@ -425,8 +465,16 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             data_subset = self.data[[self.time_col, "TEMP", "PRES"]].where(
                 ~nan_mask, drop=True
             )
+            indices = np.where(~nan_mask)[0]
 
             if len(data_subset[self.time_col]) < 5:
+                continue
+
+            # Only usable samples anchor the interpolant the filter runs on, so a
+            # flagged temperature cannot bend the correction of its neighbours. Every
+            # sample in the profile is still corrected below.
+            anchors = self._usable_temp[indices]
+            if anchors.sum() < 2:
                 continue
 
             # Find the elapsed time in seconds
@@ -437,8 +485,8 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
             # Define a function that can estimate TEMP at any time point
             TEMP_from_TIME = interpolate.interp1d(
-                data_subset["ELAPSED_TIME[s]"],
-                data_subset["TEMP"],
+                data_subset["ELAPSED_TIME[s]"].values[anchors],
+                data_subset["TEMP"].values[anchors],
                 bounds_error=False,
                 fill_value="extrapolate",
             )
@@ -493,7 +541,6 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             )
 
             # Store adjusted data
-            indices = np.where(~nan_mask)[0]
             corrected_temp_array[indices] = data_subset["TEMP"].values
 
             if (

@@ -1,16 +1,28 @@
-import yaml
-from pelagos_py.pipeline import Pipeline
+# This file is part of pelagos_py.
+#
+# Copyright 2025-2026 National Oceanography Centre and The Contributors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# Same pipeline as examples/configs/complete_config.yaml, but defined inline and
-# passed to Pipeline(config=...) as a dict rather than loaded from a file. See
-# external_config_demo.py for the config_path route.
-BASE_CONFIG_YAML = """
+# Pipeline Configuration
 pipeline:
   name: Complete processing pipeline
   description: A complete demonstration pipeline using Nelson Near Realtime data.
   out_directory: examples/data/OG1/
   log_file: complete_processing.log
 
+# Steps in the pipeline
+# For further details on step parameters, see all_step_configs.yaml
 steps:
 
 # ===========================================================
@@ -311,6 +323,19 @@ steps:
             DOWNWELLING_PAR: 5
     diagnostics: false
 
+# This glider only logs PAR on upcasts, so downcasts (and gaps) have none.
+# Reconstruct them by interpolating the Kd-normalised attenuation structure and
+# atmospheric transmission - both slowly varying - and rescaling by the exact
+# clear-sky solar geometry at each target time, rather than interpolating PAR
+# directly (which would just try to guess the diurnal cycle). Only samples that
+# lack a usable measurement are filled, and they are flagged interpolated (8).
+  - name: Interpolate PAR
+    parameters:
+      target_variable: DOWNWELLING_PAR
+      reference_depth: 15.0    # Anchor depth (m)
+      max_depth: 100.0         # PAR is at the noise floor below this
+    diagnostics: false         # Plots measured / reconstructed / sun-normalised depth-time panels
+
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped
 # without reordering steps.
@@ -378,8 +403,7 @@ steps:
 # variables produced/loaded above.
   - name: CHLA Quenching
     parameters:
-      method: thomalla2017     # Per-night fl:bbp ratio profile (needs BBP + PAR)
-      apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
+      method: thomalla2017
     diagnostics: false
 
 # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep and
@@ -390,7 +414,8 @@ steps:
         range qc:
           variable_ranges:
             CHLA_ADJUSTED:
-              3: [0.14, 50, outside]
+              2: [0, 70, inside]
+              3: [0, 50, outside]
               4: [0, 100, outside]
     diagnostics: false
 
@@ -405,10 +430,3 @@ steps:
 
 # Report assembly
   - name: Write Data Report (Python)
-"""
-
-
-demo_config = yaml.safe_load(BASE_CONFIG_YAML)
-
-p = Pipeline(config=demo_config)
-p.run()

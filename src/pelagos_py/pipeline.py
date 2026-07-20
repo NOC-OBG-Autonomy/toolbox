@@ -318,6 +318,11 @@ class Pipeline(ConfigMirrorMixin):
         if capture:
             step_context["captured_diagnostics"] = self._captured_figures
 
+        # Position in the run, used to keep captured figure filenames unique
+        # when a config repeats a step name (e.g. several 'Apply QC' steps).
+        step_index = getattr(self, "_step_index", 0) + 1
+        self._step_index = step_index
+
         step = create_step(step_config, step_context)
         self.logger.info(f"Executing: {step.name}")
 
@@ -336,6 +341,7 @@ class Pipeline(ConfigMirrorMixin):
                 diagnostic_capture.capture_figures(
                     self._capture_dir,
                     step.name,
+                    step_index,
                     captured_images,
                     # Diagnostics were force-enabled only to capture figures for
                     # the report; a step the user did not opt into must not dump
@@ -408,6 +414,7 @@ class Pipeline(ConfigMirrorMixin):
         # so they can be embedded in the report. This exercises every step's
         # diagnostic code, which is why it can slow the run down.
         report_present = any(s["name"] == REPORT_STEP_NAME for s in self.steps)
+        self._step_index = 0
         if report_present:
             self._capture_diagnostics = True
             self._captured_figures = []

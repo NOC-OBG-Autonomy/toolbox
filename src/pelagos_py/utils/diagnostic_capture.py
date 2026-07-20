@@ -64,7 +64,7 @@ def force_headless_backend():
 
 
 def _save_open_figures(
-    outdir: str, step_name: str, images: list, close: bool = True
+    outdir: str, step_name: str, step_index: int, images: list, close: bool = True
 ) -> None:
     """Save every open matplotlib figure to ``outdir`` for the report.
 
@@ -74,8 +74,13 @@ def _save_open_figures(
     nor leaked between steps; when ``False`` the figures are left open so they
     can still be shown interactively afterwards (used for steps the user
     explicitly enabled diagnostics on).
+
+    ``step_index`` is the step's position in the pipeline. It is part of the
+    filename because a config may run the same step more than once (several
+    'Apply QC' steps, say); without it every instance would write - and read
+    back - the same paths, so each would show the last one's figures.
     """
-    safe = step_name.replace(os.sep, "_").replace(" ", "_")
+    safe = f"{step_index:02d}_" + step_name.replace(os.sep, "_").replace(" ", "_")
     for num in plt.get_fignums():
         fig = plt.figure(num)
         path = os.path.join(outdir, f"{safe}_{len(images) + 1}.png")
@@ -93,6 +98,7 @@ def _save_open_figures(
 def capture_figures(
     outdir: str,
     step_name: str,
+    step_index: int,
     images: list,
     suppress_text: bool = False,
     interactive: bool = False,
@@ -109,6 +115,9 @@ def capture_figures(
         Directory the figures are written into.
     step_name : str
         Name of the step producing the figures (used to name the files).
+    step_index : int
+        The step's position in the pipeline, used to keep the filenames of
+        repeated step names apart.
     images : list
         List that captured image paths are appended to, in the order produced.
     suppress_text : bool, optional
@@ -150,14 +159,14 @@ def capture_figures(
             #   Save into the report first (leaving the figures open), then show
             #   them in a blocking window so the user sees the plot and the
             #   pipeline pauses. Close afterwards so figures don't leak.
-            _save_open_figures(outdir, step_name, images, close=False)
+            _save_open_figures(outdir, step_name, step_index, images, close=False)
             try:
                 original_show(*args, **{**kwargs, "block": True})
             finally:
                 for num in plt.get_fignums():
                     plt.close(num)
         else:
-            _save_open_figures(outdir, step_name, images, close=True)
+            _save_open_figures(outdir, step_name, step_index, images, close=True)
 
     plt.show = _capture_show
 
@@ -171,7 +180,7 @@ def capture_figures(
         plt.show = original_show
         #   Catch any figures a diagnostic left open without calling show()
         #   (headless: never display these, just save them).
-        _save_open_figures(outdir, step_name, images, close=True)
+        _save_open_figures(outdir, step_name, step_index, images, close=True)
         if interactive:
             #   Return to the headless Agg backend forced for the rest of the
             #   run, so only opt-in steps ever touch the GUI backend.

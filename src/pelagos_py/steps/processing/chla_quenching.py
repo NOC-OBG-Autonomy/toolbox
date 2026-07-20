@@ -166,14 +166,15 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         "method": {
             "type": str,
             "default": "xing2012",
+            # in order of publication (also the comparison panel order)
             "options": [
+                "sackmann2008",
                 "xing2012",
                 "biermann2015",
                 "hemsley2015",
-                "xing2018",
-                "thomalla2017",
                 "swart2015",
-                "sackmann2008",
+                "thomalla2017",
+                "xing2018",
             ],
             "description": (
                 "Quenching correction method. Implemented: 'xing2012' (MLD-based), "
