@@ -1,7 +1,7 @@
 import yaml
 from pelagos_py.pipeline import Pipeline
 
-# Same pipeline as examples/configs/complete_config.yaml, but defined inline and
+# Same pipeline as examples/configs/example_config_nelson.yaml, but defined inline and
 # passed to Pipeline(config=...) as a dict rather than loaded from a file. See
 # external_config_demo.py for the config_path route.
 BASE_CONFIG_YAML = """

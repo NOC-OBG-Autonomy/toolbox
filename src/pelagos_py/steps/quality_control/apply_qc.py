@@ -176,9 +176,14 @@ class ApplyQC(BaseStep):
             [var for var in data.data_vars if var.endswith("_QC")]
         ) - set(test_qc_outputs_cols)
         if any(other_existing_qc):
-            self.log(f"Found QC columns for untested values: {other_existing_qc}")
-            self.log(
-                "These columns will not be modified and are not subject to this step."
+            # File-only: this set can be 20+ columns and repeats every QC step, so
+            # it stays out of the console and is recorded in the log file instead.
+            self.logger.info(
+                "[%s] %s pre-existing QC column(s) left untouched by this step: %s",
+                self.name,
+                len(other_existing_qc),
+                ", ".join(sorted(other_existing_qc)),
+                extra={"console": False},
             )
 
         # Initialize the missing flag columns

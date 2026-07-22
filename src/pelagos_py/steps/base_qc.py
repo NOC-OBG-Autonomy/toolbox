@@ -96,13 +96,35 @@ class BaseQC:
         """
         return parameter_spec.describe(cls.parameter_schema or {})
 
-    def log(self, message):
-        """Log an info-level message with the QC name prefix."""
-        self.logger.info("[%s] %s", self.qc_name, message)
+    def log(self, message, console=True):
+        """Log an info-level message with the QC name prefix.
+
+        Set ``console=False`` to keep the line in the log file only.
+        """
+        self.logger.info("[%s] %s", self.qc_name, message, extra={"console": console})
 
     def log_warn(self, message):
         """Log a warning-level message with the QC name prefix."""
         self.logger.warning("[%s] %s", self.qc_name, message)
+
+    def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
+        """Wrap a countable loop as a standard pipeline progress bar.
+
+        Same as :meth:`BaseStep.log_progress`, for QC tests: the bar runs under
+        the parent Apply QC step (pausing its elapsed timer) and records a
+        one-line summary to the log file.
+        """
+        from pelagos_py.utils.console import progress_bar
+
+        return progress_bar(
+            iterable,
+            desc=desc,
+            total=total,
+            unit=unit,
+            leave=leave,
+            logger=self.logger,
+            step_name=self.qc_name,
+        )
 
     def return_qc(self):
         """Representative of QC processing, to be overridden by subclasses.

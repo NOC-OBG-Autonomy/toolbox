@@ -162,6 +162,11 @@ class deep_correction(BaseStep, QCHandlingMixin):
         self.apply_to, self.output_as = self.resolve_variables()
 
         self.compute_dark_value()
+        # The one line this step shows on the console; the rest of its detail
+        # (how the value was derived) stays in the log file.
+        self.log(
+            f"Dark correction value for {self.apply_to} = {self.dark_value:.6f}"
+        )
         self.apply_dark_correction()
 
         self.reconstruct_data()
@@ -191,13 +196,14 @@ class deep_correction(BaseStep, QCHandlingMixin):
         if not apply_to.endswith("_ADJUSTED") and f"{apply_to}_ADJUSTED" in self.data.data_vars:
             self.log(
                 f"User requested processing on {apply_to} but {apply_to}_ADJUSTED "
-                f"already exists. Using {apply_to}_ADJUSTED..."
+                f"already exists. Using {apply_to}_ADJUSTED...",
+                console=False,
             )
             apply_to = f"{apply_to}_ADJUSTED"
 
         output_as = apply_to if apply_to.endswith("_ADJUSTED") else f"{apply_to}_ADJUSTED"
 
-        self.log(f"Processing {apply_to}...")
+        self.log(f"Processing {apply_to}...", console=False)
         return apply_to, output_as
 
     def compute_dark_value(self):
@@ -207,13 +213,14 @@ class deep_correction(BaseStep, QCHandlingMixin):
 
         # A dark value supplied via config short-circuits the computation.
         if self.dark_value is not None:
-            self.log(f"Using dark value from config: {self.dark_value}")
+            self.log(f"Using dark value from config: {self.dark_value}", console=False)
             return
 
         var, depth = self.apply_to, self.depth_var
         self.log(
             f"Computing dark value from the first {self.n_profiles} profiles "
-            f"reaching {depth} > {self.depth_threshold}."
+            f"reaching {depth} > {self.depth_threshold}.",
+            console=False,
         )
 
         if self.depth_threshold < MIN_DEEP_THRESHOLD:
@@ -298,7 +305,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 f"Skipped {len(skipped)} deep profile(s) with too few points "
                 f"(need >= {self.min_profile_points} total, "
                 f">= {self.min_valid_points} below {self.depth_threshold} {depth}): "
-                f"{skipped}"
+                f"{skipped}",
+                console=False,
             )
 
         if len(minima) == 0:
@@ -309,9 +317,13 @@ class deep_correction(BaseStep, QCHandlingMixin):
 
         self.dark_value = float(np.nanmedian(minima))
         self.log(
-            f"\nComputed dark value: {self.dark_value:.6f} "
-            f"(median of {len(minima)} profile minimums)\n"
-            f"Min values range: {np.min(minima):.6f} to {np.max(minima):.6f}"
+            f"Computed dark value: {self.dark_value:.6f} "
+            f"(median of {len(minima)} profile minimums)",
+            console=False,
+        )
+        self.log(
+            f"Min values range: {np.min(minima):.6f} to {np.max(minima):.6f}",
+            console=False,
         )
 
     def apply_dark_correction(self):

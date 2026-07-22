@@ -343,14 +343,16 @@ def test_swart_no_par_signal_returns_unchanged():
     assert np.array_equal(out, chlf)
 
 
-# --- interpolate_par (fill casts lacking PAR) -------------------------------
+# --- _warn_missing_par (flag casts lacking PAR) -----------------------------
 
 
-def _fill_step(max_gap_hours=12.0, day=(1, 2, 3)):
-    """Bare step for :meth:`_fill_par_across_casts` with three hourly casts."""
+def _warn_step(day=(1, 2, 3)):
+    """Bare step for :meth:`_warn_missing_par` with three casts."""
     step = Quenching.__new__(Quenching)
-    step.interpolate_par_max_gap_hours = max_gap_hours
-    step.log = lambda _m: None
+    step.par_var = "DOWNWELLING_PAR"
+    step.method = "biermann2015"
+    step.warnings = []
+    step.log_warn = lambda m: step.warnings.append(m)
     step._sun_cache = {pn: (10.0 if pn in day else -10.0) for pn in (1, 2, 3)}
     step._sun_elevation_for = lambda pn: step._sun_cache[pn]
     step.sun_args = xr.Dataset(
@@ -361,39 +363,39 @@ def _fill_step(max_gap_hours=12.0, day=(1, 2, 3)):
     return step
 
 
-# cast 1 & 3 carry PAR (donors); cast 2 (middle, 1 h from each) has none.
+# cast 1 & 3 carry PAR; cast 2 (the middle one) has none.
 _DEPTH = np.array([0, 10, 20, 30.0] * 3)
 _PNUM = np.array([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3.0])
 _PAR = np.array([100, 50, 25, 12, np.nan, np.nan, np.nan, np.nan, 200, 100, 50, 25.0])
 
 
-def test_fill_par_blends_two_neighbours_by_time():
-    out = _fill_step()._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
-    # Midway in time -> mean of the two donors at each depth; donors untouched.
-    assert out[_PNUM == 2].tolist() == pytest.approx([150.0, 75.0, 37.5, 18.5])
-    assert out[_PNUM == 1].tolist() == pytest.approx([100, 50, 25, 12])
+def _warn_subset(par):
+    return xr.Dataset(
+        {
+            "DOWNWELLING_PAR": ("N", par),
+            "DEPTH": ("N", _DEPTH),
+            "PROFILE_NUMBER": ("N", _PNUM),
+        }
+    )
 
 
-def test_fill_par_one_sided_copies_single_donor():
+def test_warn_missing_par_flags_daytime_cast_without_par():
+    step = _warn_step()
+    step._warn_missing_par(_warn_subset(_PAR))  # cast 2 daytime, no PAR
+    assert len(step.warnings) == 1
+    assert "1 daytime cast" in step.warnings[0]
+    assert "Interpolate PAR" in step.warnings[0]
+
+
+def test_warn_missing_par_quiet_when_all_daytime_casts_have_par():
+    step = _warn_step()
     par = _PAR.copy()
-    par[_PNUM == 3] = np.nan  # only cast 1 remains a donor
-    out = _fill_step()._fill_par_across_casts(par, _DEPTH, _PNUM)
-    assert out[_PNUM == 2].tolist() == pytest.approx([100, 50, 25, 12])
+    par[_PNUM == 2] = [100, 50, 25, 12]  # cast 2 now carries PAR
+    step._warn_missing_par(_warn_subset(par))
+    assert step.warnings == []
 
 
-def test_fill_par_skips_when_gap_too_large():
-    out = _fill_step(max_gap_hours=0.5)._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
-    assert np.all(np.isnan(out[_PNUM == 2]))  # nearest donor is 1 h away
-
-
-def test_fill_par_does_not_extrapolate_below_donor_range():
-    depth = _DEPTH.copy()
-    depth[_PNUM == 2] = [0, 10, 40, 50]  # 40, 50 m are below the donors' 30 m max
-    out = _fill_step()._fill_par_across_casts(_PAR, depth, _PNUM)
-    filled = out[_PNUM == 2]
-    assert np.all(np.isfinite(filled[:2])) and np.all(np.isnan(filled[2:]))
-
-
-def test_fill_par_leaves_night_casts_alone():
-    out = _fill_step(day=(1, 3))._fill_par_across_casts(_PAR, _DEPTH, _PNUM)
-    assert np.all(np.isnan(out[_PNUM == 2]))  # cast 2 is night -> not filled
+def test_warn_missing_par_ignores_night_casts():
+    step = _warn_step(day=(1, 3))  # cast 2 (the PAR-less one) is night
+    step._warn_missing_par(_warn_subset(_PAR))
+    assert step.warnings == []

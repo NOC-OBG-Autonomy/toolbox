@@ -30,7 +30,6 @@ import pvlib
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from scipy.stats import linregress
-from tqdm import tqdm
 
 #: Diagnostics tuning for the method-comparison panels.
 CALC_SUFFIX = "__FOR_CALC"  #: suffix of the calculation-only copies added to the per-profile subset; see run().
@@ -223,25 +222,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "('biermann2015'/'swart2015') and the iPAR=15 depth ('xing2018')."
             ),
         },
-        "interpolate_par": {
-            "type": bool,
-            "default": True,
-            "description": (
-                "For PAR-based methods, fill casts that lack usable PAR (e.g. a "
-                "descent where the radiometer was not logged) by time-interpolating "
-                "the PAR-vs-depth profile from the nearest valid cast on each side, "
-                "so every cast can be corrected rather than only those carrying PAR. "
-                "The observed PAR variable in the output is left unchanged."
-            ),
-        },
-        "interpolate_par_max_gap_hours": {
-            "type": float,
-            "default": 12.0,
-            "description": (
-                "Only used when 'interpolate_par' is true: a cast is filled only if "
-                "a valid-PAR cast exists within this many hours on at least one side."
-            ),
-        },
     }
 
     # ==================================================================
@@ -369,18 +349,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         data_subset = self.data[subset_vars]
 
         # PAR is often logged on only one cast direction, so the other cast
-        # yields no euphotic depth and would be skipped. Fill those casts from
-        # neighbouring casts (into the working copies used by the loop and the
-        # diagnostics; the exported PAR variable is left untouched).
-        if needs_par and self.interpolate_par:
-            par_dims = self.data[self.par_var].dims
-            filled_par = self._fill_par_across_casts(
-                np.asarray(data_subset[self.par_var].values, dtype=float),
-                np.asarray(data_subset["DEPTH"].values, dtype=float),
-                data_subset["PROFILE_NUMBER"].values,
-            )
-            data_subset = data_subset.assign(**{self.par_var: (par_dims, filled_par)})
-            self.data_copy[self.par_var] = (par_dims, filled_par)
+        # yields no euphotic depth and is left uncorrected. This step no longer
+        # fills PAR itself - warn and point at the dedicated 'Interpolate PAR'
+        # step so the config, not this step, does the filling.
+        if needs_par:
+            self._warn_missing_par(data_subset)
 
         # Calculation-only copies of each input, with flagged samples NaN'd out. Every
         # quantity the methods derive (quenching depth, fl:bbp ratios, in-MLD maxima)
@@ -420,9 +393,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         profile_numbers = np.unique(
             data_subset["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS")
         )
-        for profile_number in tqdm(
-            profile_numbers, colour="green", desc="\033[97mProgress\033[0m", unit="prof"
-        ):
+        for profile_number in self.log_progress(profile_numbers, desc="", unit="prof"):
 
             # Subset the data
             profile = data_subset.where(
@@ -459,87 +430,35 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         """
         return np.asarray(profile[f"{var}{CALC_SUFFIX}"].values, dtype=float)
 
-    def _fill_par_across_casts(self, par, depth, pnum):
-        """Fill casts lacking usable PAR from their nearest neighbours in time.
+    def _warn_missing_par(self, data_subset):
+        """Warn if daytime casts lack usable PAR (they will be left uncorrected).
 
-        A "donor" is any cast with at least four finite, positive PAR points
-        (enough for a Kd fit). For each daytime cast without one, the PAR-vs-depth
-        profile of the nearest donor on each side (within
-        ``interpolate_par_max_gap_hours``) is evaluated at the cast's own depths
-        and blended by time; a single-sided cast copies its one donor. No
-        extrapolation beyond a donor's sampled depth range is made, and night
-        casts are left alone (every method skips them regardless).
-
-        Returns a copy of ``par`` with those casts filled; all other samples,
-        and the observed PAR variable itself, are unchanged.
+        PAR-based methods derive a per-cast euphotic/iPAR depth from the PAR
+        profile; a cast with fewer than four finite positive PAR points yields
+        no depth and is skipped. This step no longer fills those casts itself -
+        it points at the dedicated 'Interpolate PAR' step so the fill lives in
+        the config. Night casts are ignored (every method skips them anyway).
         """
         MIN_PTS = 4  # matches estimate_euphotic_depth's minimum for a Kd fit
-        filled = np.array(par, dtype=float, copy=True)
+        par = np.asarray(data_subset[self.par_var].values, dtype=float)
+        depth = np.asarray(data_subset["DEPTH"].values, dtype=float)
+        pnum = data_subset["PROFILE_NUMBER"].values
 
-        # Per-cast surface-fix time (ns) gathered in run(); orders casts in time.
-        times = {
-            int(pn): pd.to_datetime(self.sun_args.loc[pn, "TIME"]).value
-            for pn in self.sun_args.index
-        }
-
-        # Donors: casts with enough finite positive PAR to define a light profile.
-        donors = {}
-        for pn in times:
+        missing = 0
+        for pn in (int(p) for p in self.sun_args.index):
+            if self._sun_elevation_for(pn) <= 0:
+                continue  # night cast, skipped by every method regardless
             sel = pnum == pn
             z, p = depth[sel], par[sel]
-            m = np.isfinite(z) & np.isfinite(p) & (p > 0)
-            if np.count_nonzero(m) >= MIN_PTS:
-                order = np.argsort(z[m])
-                donors[pn] = (z[m][order], p[m][order])
-        if not donors:
-            self.log("Interpolate PAR: no cast has usable PAR to interpolate from.")
-            return filled
+            if np.count_nonzero(np.isfinite(z) & np.isfinite(p) & (p > 0)) < MIN_PTS:
+                missing += 1
 
-        donor_pns = sorted(donors, key=lambda q: times[q])
-        donor_t = np.array([times[q] for q in donor_pns])
-        max_gap = self.interpolate_par_max_gap_hours * 3600e9  # hours -> ns
-
-        def donor_par_at(pn, z_target):
-            dz, dp = donors[pn]
-            out = np.interp(z_target, dz, dp)
-            out[(z_target < dz[0]) | (z_target > dz[-1])] = np.nan  # no extrapolation
-            return out
-
-        n_filled = 0
-        for pn in times:
-            if pn in donors or self._sun_elevation_for(pn) <= 0:
-                continue  # has its own PAR, or is night (skipped by every method)
-            t = times[pn]
-            left = donor_t <= t
-            b = donor_pns[np.where(left)[0][-1]] if left.any() else None
-            a = donor_pns[np.where(~left)[0][0]] if (~left).any() else None
-            if b is not None and t - times[b] > max_gap:
-                b = None
-            if a is not None and times[a] - t > max_gap:
-                a = None
-            if b is None and a is None:
-                continue
-
-            sel = pnum == pn
-            zt = depth[sel]
-            if b is not None and a is not None:
-                pb, pa = donor_par_at(b, zt), donor_par_at(a, zt)
-                w = (t - times[b]) / (times[a] - times[b])
-                pv = (1 - w) * pb + w * pa
-                # Where the blend is NaN (one donor out of depth range) but the
-                # other donor covers it, keep the covering donor's value.
-                pv = np.where(np.isnan(pv) & np.isfinite(pb), pb, pv)
-                pv = np.where(np.isnan(pv) & np.isfinite(pa), pa, pv)
-            else:
-                pv = donor_par_at(b if b is not None else a, zt)
-            filled[np.where(sel)[0]] = pv
-            n_filled += 1
-
-        self.log(
-            f"Interpolate PAR: filled {n_filled} daytime cast(s) lacking usable PAR "
-            f"from neighbouring casts (<= {self.interpolate_par_max_gap_hours:g} h)."
-        )
-        return filled
+        if missing:
+            self.log_warn(
+                f"{missing} daytime cast(s) lack usable {self.par_var} and will be left "
+                f"uncorrected by '{self.method}'. Add an 'Interpolate PAR' step before "
+                f"this one to fill PAR onto those casts."
+            )
 
     def _resolve_bbp_var(self):
         """Return an available backscatter variable, preferring the configured one.

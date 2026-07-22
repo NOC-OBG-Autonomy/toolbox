@@ -108,7 +108,6 @@ class LoadOG1(BaseStep):
         self.data = xr.open_dataset(self.file_path)
         self.log(f"Loaded data from {self.file_path}")
 
-        self.log("Loading dataset to RAM...")
         self.data.load()
 
         # Parameters are resolved from parameter_schema in BaseStep.__init__,
@@ -177,9 +176,6 @@ class LoadOG1(BaseStep):
                 "Please check the quality of your input data."
             )
             
-        # Generate diagnostics if enabled
-
-        self.log(f"Loaded data from {self.file_path}")
         # Make these available to other steps (e.g. Format Checker, which reads the
         # original file from disk; the report uses filename_core for naming).
         self.context["global_parameters"]["filename_core"] = Path(self.file_path).stem
@@ -195,12 +191,12 @@ class LoadOG1(BaseStep):
 
     def normalise_qc_flags(self):
         """
-        Coerce QC flag variables to integers, mapping NaN to 9 (missing).
+        Coerce QC flag variables to integers, mapping NaN to 0 (no QC).
 
-        Raw OG1 files store QC flags as float with NaN (which lines up with
-        missing measurements). Downstream steps use flags as integer array
-        indices / dict keys, so normalise them once at load rather than having
-        each step guard against float NaN flags.
+        Raw OG1 files store QC flags as float with NaN. Downstream steps use
+        flags as integer array indices / dict keys, so normalise them once at
+        load rather than having each step guard against float NaN flags. NaN
+        means no QC has been applied yet, which is flag 0 (not 9/missing).
         """
         qc_vars = [v for v in self.data.data_vars if v.endswith("_QC")]
         normalised = []
@@ -209,13 +205,13 @@ class LoadOG1(BaseStep):
             if flags.dtype.kind != "f":
                 continue
             # int8 is plenty for flags 0-9 and keeps QC arrays small.
-            self.data[var] = flags.fillna(9).astype(np.int8)
+            self.data[var] = flags.fillna(0).astype(np.int8)
             normalised.append(var)
 
         if normalised:
             self.log_warn(
                 f"{len(normalised)} QC flag variable(s) were stored as float with "
-                "NaN values; normalised to integer (NaN flags mapped to 9/missing). "
+                "NaN values; normalised to integer (NaN flags mapped to 0/no QC). "
                 f"Affected: {', '.join(sorted(normalised))}."
             )
 
@@ -230,5 +226,5 @@ class LoadOG1(BaseStep):
         :meth:`xarray.Dataset.info`) to stdout — a quick check that the data
         was loaded as expected.
         """
-        self.log("Generating diagnostics...")
+        self.log_generating_diagnostics()
         diag.generate_info(self.data)

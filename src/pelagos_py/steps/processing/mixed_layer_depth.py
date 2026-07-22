@@ -27,7 +27,6 @@ import gsw
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from tqdm import tqdm
 
 # Maps the user-facing ``method`` choice to the dataset variables it reads. Density
 # is derived here as potential density rather than read from DENSITY: that variable
@@ -263,12 +262,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         mld = np.full(profile_number.shape, np.nan)
         profile_numbers = np.unique(profile_number[~np.isnan(profile_number)])
         if progress:
-            profile_numbers = tqdm(
-                profile_numbers,
-                colour="green",
-                desc="\033[97mProgress\033[0m",
-                unit="prof",
-            )
+            profile_numbers = self.log_progress(profile_numbers, desc="", unit="prof")
 
         for pn in profile_numbers:
             indices = np.where(profile_number == pn)[0]

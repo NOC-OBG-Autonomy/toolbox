@@ -40,14 +40,12 @@ logger = logging.getLogger("pelagos_py.pipeline.discovery")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     logger.propagate = False  #   Avoid duplicate lines if the app configures root logging
-    _ch = logging.StreamHandler()
-    _ch.setFormatter(
-        logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-            "%Y-%m-%d %H:%M:%S",
-        )
-    )
-    logger.addHandler(_ch)
+    # Same compact console handler the pipeline uses, so discovery (which runs at
+    # import time, before a Pipeline exists) matches the rest of the run. The
+    # long per-module scan shows a progress bar instead of a line-per-module.
+    from pelagos_py.utils.console import make_console_handler
+
+    logger.addHandler(make_console_handler())
 
 # Global registries
 STEP_CLASSES = {}
@@ -61,15 +59,22 @@ def discover_steps():
     Dynamically discover and import step modules from the steps directory.
     This populates the global STEP_CLASSES and QC_CLASSES registries for use elsewhere.
     """
+    from pelagos_py.utils.console import progress_bar
+
     base_dir = pathlib.Path(__file__).parent.resolve()
-    logger.info("Scanning for step modules in %s", base_dir)
+    logger.info("Scanning for step modules in %s", base_dir, extra={"console": False})
 
     discovery_start = time.time()
     failed_modules = []
-    for py_file in base_dir.rglob("*.py"):
-        if py_file.name == "__init__.py":
-            continue
-
+    # Pre-collect the module files so the scan shows a determinate progress bar
+    # (it can take several seconds as heavy step dependencies import). Per-module
+    # timing drops to the log file; the console just advances the bar.
+    module_files = [
+        py_file
+        for py_file in base_dir.rglob("*.py")
+        if py_file.name != "__init__.py"
+    ]
+    for py_file in progress_bar(module_files, desc="Discovering steps", unit="mod"):
         # Convert file path to module path
         relative_path = py_file.resolve().relative_to(base_dir)
         module_name = ".".join(
@@ -84,10 +89,17 @@ def discover_steps():
             failed_modules.append(module_name)
             continue
         elapsed = time.time() - module_start
-        logger.info("Imported step module: %s (%.2fs)", module_name, elapsed)
+        logger.info(
+            "Imported step module: %s (%.2fs)",
+            module_name,
+            elapsed,
+            extra={"console": False},
+        )
 
     logger.info(
-        "Finished importing step modules in %.2fs", time.time() - discovery_start
+        "Finished importing step modules in %.2fs",
+        time.time() - discovery_start,
+        extra={"console": False},
     )
 
     # Populate global step class map. Importing the modules above is what's

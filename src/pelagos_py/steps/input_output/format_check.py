@@ -259,18 +259,14 @@ class FormatCheck(BaseStep):
         (self.log if overall_pass else self.log_warn)(header)
 
         #   --- Log 2: the detail summary, only when 'console' is selected.
-        #   Greyed on the console (when colour is supported) so it reads clearly
-        #   as the compliance checker's own output, distinct from pipeline logs.
+        #   Each line is logged on its own so it carries the same time/step prefix
+        #   as every other line (info lines are greyed by the console formatter).
         if console_on:
             detail = list(summary_lines)
             if ComplianceChecker.check_errors(score_groups, verbose=0):
                 detail.append("! Errors occurred while running the checker — see a saved report.")
-            self.logger.info(
-                "[%s] %s",
-                self.name,
-                "Summary:\n" + "\n".join(f"  {line}" for line in detail),
-                extra={"color": "grey"},
-            )
+            for line in detail:
+                self.log(line)
 
         #   --- Log 3: where the full detail lives, or how to save it.
         if saved:

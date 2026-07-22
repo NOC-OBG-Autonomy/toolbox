@@ -134,10 +134,13 @@ class QCHandlingMixin:
             )
         n_excluded = int((~mask).sum())
         if n_excluded:
+            # QC provenance: kept in the log file but off the console, where it
+            # would otherwise repeat once per variable-set a step computes from.
             self.log(
                 f"Excluding {n_excluded} of {mask.size} samples flagged "
                 f"{self.calculation_flag_filter} in {list(variables)} from this "
-                "step's calculations (they are still corrected)."
+                "step's calculations (they are still corrected).",
+                console=False,
             )
         return mask
 

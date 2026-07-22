@@ -49,8 +49,9 @@ import yaml
 from importlib.metadata import version, PackageNotFoundError
 import matplotlib.pyplot as plt
 import xarray as xr
-from tqdm import tqdm
 import numpy as np
+
+from pelagos_py.utils.console import progress_bar
 
 
 #   The core PDF fonts are latin-1 only. Map the symbols we expect to plain
@@ -331,9 +332,18 @@ class ReportPDF(FPDF):
         #   footer (which sits ~15 mm from the foot).
         self.set_auto_page_break(auto=True, margin=20)
         self.set_title(sanitize(title))
-        #   Table-of-contents entries (title, page number, internal link id),
-        #   filled in by :meth:`section_heading` as each section is written.
-        self.toc = []
+        #   One-shot flag: skip the very next add_page() so a section can reuse a
+        #   page that was already opened for it (see run()'s contents placeholder).
+        self._skip_next_add_page = False
+
+    def add_page(self, *args, **kwargs) -> None:
+        #   Honour a pending one-shot skip so the first section after the contents
+        #   placeholder reuses the fresh page fpdf leaves us on, rather than adding
+        #   another and leaving a blank page behind.
+        if self._skip_next_add_page:
+            self._skip_next_add_page = False
+            return
+        super().add_page(*args, **kwargs)
 
     def header(self) -> None:
         #   Running header on every page except the title page.
@@ -467,9 +477,10 @@ class ReportPDF(FPDF):
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         self.ln(1)
-        self.set_font("Times", "", 11)
+        #   Kept small so a long step list still fits the title page.
+        self.set_font("Times", "", 9)
         self.multi_cell(
-            0, 5.5, sanitize(listing), align="C",
+            0, 4.5, sanitize(listing), align="C",
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
 
@@ -484,28 +495,11 @@ class ReportPDF(FPDF):
         self.ln(2)
 
     def section_heading(self, text: str) -> None:
-        #   Level-2 heading that also records an internal link for the index, so
-        #   each section is listed with its page number. Call once per section.
-        link = self.add_link()
-        self.set_link(link, page=self.page_no())
-        self.toc.append((text, self.page_no(), link))
+        #   Level-2 heading that also registers a document section (via
+        #   start_section) so it appears on the contents page and in the PDF
+        #   bookmarks with its page number. Call once per section.
+        self.start_section(text, level=0)
         self.h2(text)
-
-    def contents(self) -> None:
-        #   Render the recorded sections as a compact, linkable contents list.
-        if not self.toc:
-            return
-        self.set_font("Times", "", 9)
-        page_w = 14  #   narrow right-hand column for the page number
-        for title, page, link in self.toc:
-            self.set_text_color(*_LINK_TEAL)
-            self.cell(self.epw - page_w, 5, sanitize(title), link=link)
-            self.set_text_color(0)
-            self.cell(
-                page_w, 5, str(page), align="R", link=link,
-                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-            )
-        self.ln(2)
 
     def h3(self, text: str) -> None:
         self.ln(1)
@@ -983,6 +977,25 @@ def variable_index_rows(data: xr.Dataset) -> list:
     return rows
 
 
+def contents_page(pdf: ReportPDF, outline) -> None:
+    #   Fills the reserved second page once every section's page number is known
+    #   (see insert_toc_placeholder in the step's run). Rendered from fpdf's
+    #   document outline, populated by section_heading via start_section.
+    pdf.h2("Contents")
+    pdf.set_font("Times", "", 9)
+    page_w = 14  #   narrow right-hand column for the page number
+    for section in outline:
+        link = pdf.add_link(page=section.page_number)
+        pdf.set_text_color(*_LINK_TEAL)
+        pdf.cell(pdf.epw - page_w, 5, sanitize(section.name), link=link)
+        pdf.set_text_color(0)
+        pdf.cell(
+            page_w, 5, str(section.page_number), align="R", link=link,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
+    pdf.ln(2)
+
+
 def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     #   Closing index page: pelagos-py credit, a linked contents list, then the
     #   QC flag glossary, variable index and glider global attributes.
@@ -1004,10 +1017,6 @@ def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     pdf.ln(8)
 
     pdf.section_heading("Index")
-
-    #   Contents: each report section with its page number, linked in the PDF.
-    pdf.h3("Contents")
-    pdf.contents()
 
     #   QC flag glossary: translate the flag values used throughout the report.
     pdf.h3("QC flag glossary")
@@ -1343,6 +1352,7 @@ def make_plots(
     pdf: ReportPDF,
     data: xr.Dataset,
     outdir: str,
+    bar=None,
 ) -> None:
     #   Write a QC histogram per numeric QC variable. xarray.plot keeps the
     #   million-point series fast to render.
@@ -1367,22 +1377,24 @@ def make_plots(
     dataset_id = data.attrs.get("dataset_id")
     dataset_label = dataset_id if dataset_id != UNKNOWN_DATASET_ID else None
 
-    for var in tqdm(
-        qc_vars,
-        colour="green",
-        desc=f"\033[97mProgress \033[0m",
-        unit="vars",
-    ):
+    #   The report bar arrives here at 10% (cross-sections). Jump it to 20% as the
+    #   image loop begins, then share the remaining 80% across the QC variables.
+    if bar is not None:
+        bar.update(10)
+        per_var = 80.0 / len(qc_vars) if qc_vars else 0
+    for var in qc_vars:
         var_source = var[:-3]  #   TEMP_QC --> TEMP
         #   When both the measurement and its flags are entirely NaN there is
         #   nothing to plot. Note it in one line and skip so more useful plots
         #   fit on the page.
         if np.all(np.isnan(data[var_source])) and np.all(np.isnan(data[var])):
             pdf.body(f"{var_source} and {var} are all NaN.", align="C")
-            continue
-        # Any form of scatter takes ~30 sec, stick with xarray.plot for now (no colorbars, alternative color schemes)
-        hist_img = qc_hist(data, outdir, var, dataset_label=dataset_label)
-        pdf.image_full(hist_img, aspect=3.2 / 8)
+        else:
+            # Any form of scatter takes ~30 sec, stick with xarray.plot for now (no colorbars, alternative color schemes)
+            hist_img = qc_hist(data, outdir, var, dataset_label=dataset_label)
+            pdf.image_full(hist_img, aspect=3.2 / 8)
+        if bar is not None:
+            bar.update(per_var)
 
 
 def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
@@ -1759,15 +1771,40 @@ class WriteDataReportPython(BaseStep):
             )
             pdf.title_page()
 
+            #   Reserve the second page for the contents list; it is filled in at
+            #   output time (contents_page) once every section's page number is
+            #   known. Sections written below therefore start on page 3.
+            #   allow_extra_pages lets a long contents list spill onto a further
+            #   page rather than erroring, with page numbers staying correct.
+            if self.parameters.get("show_index", True):
+                #   Start the contents on its own fresh page: insert_toc_placeholder
+                #   treats the *current* page/position as where the ToC begins, so
+                #   without this the contents render onto the tail of the title page.
+                pdf.add_page()
+                pdf.insert_toc_placeholder(
+                    contents_page, pages=1, allow_extra_pages=True
+                )
+                #   The placeholder's page break leaves us on a fresh page; let the
+                #   first section reuse it instead of adding another (blank) one.
+                pdf._skip_next_add_page = True
+
             #   Each section is optional and defaults on. Lead with the
             #   cross-section plots (the headline view of the mission), then the
             #   Format Checker results (whenever that step ran), the configuration,
             #   per-step diagnostics, QC summary, plots and logs. Close with a
             #   pelagos-py credit and an index (QC flag glossary, variable index
             #   and glider information).
+            #   One bar tracks the whole report build: cross-sections take it to
+            #   10%, the start of the QC-image loop jumps it to 20%, and the loop
+            #   itself fills 20 -> 100%. The middle sections (format/config/etc.)
+            #   are quick, so the 10 -> 20 jump reads as a single step.
+            report_bar = progress_bar(
+                total=100, desc="", unit="%", step_name=self.name
+            )
+
             if self.parameters.get("show_cross_section_plots", True):
-                self.log("Generating cross-section plots.")
                 cross_section_section(pdf, data, outdir=fig_dir)
+                report_bar.update(10)
 
             if (
                 self.parameters.get("show_format_check", True)
@@ -1789,8 +1826,8 @@ class WriteDataReportPython(BaseStep):
                 qc_section(pdf, data)
 
             if self.parameters.get("show_qc_plots", True):
-                self.log("Generating images.")
-                make_plots(pdf, data, outdir=fig_dir)
+                make_plots(pdf, data, outdir=fig_dir, bar=report_bar)
+            report_bar.close()
 
             if self.parameters.get("show_logs", True):
                 log_path = odir + self.context["global_parameters"]["log_file"]

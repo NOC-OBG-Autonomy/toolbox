@@ -35,7 +35,6 @@ import warnings
 import xarray as xr
 import pandas as pd
 import pvlib
-from tqdm import tqdm
 
 
 # Functions written and provided by Thomas Ryan-Keogh based off of (https://doi.org/10.1002/lom3.10701)
@@ -310,12 +309,7 @@ class par_irregularity_qc(BaseQC):
         profile_numbers = np.unique(
             self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS")
         )
-        for profile_number in tqdm(
-            profile_numbers,
-            colour="green",
-            desc="\033[97mProgress\033[0m",
-            unit="profile",
-        ):
+        for profile_number in self.log_progress(profile_numbers, desc="", unit="profile"):
             # Subset the data
             profile = self.data.where(
                 self.data["PROFILE_NUMBER"] == profile_number, drop=True

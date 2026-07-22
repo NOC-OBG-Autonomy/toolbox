@@ -519,14 +519,6 @@ steps:
       # [par_var]:
       #   Downwelling PAR variable used by the PAR-based methods.
       par_var: DOWNWELLING_PAR
-      # [interpolate_par]:
-      #   For PAR-based methods, fill casts lacking usable PAR from the nearest
-      #   valid cast on each side so every cast can be corrected.
-      interpolate_par: true
-      # [interpolate_par_max_gap_hours]:
-      #   Only used when interpolate_par is true: a cast is filled only if a
-      #   valid-PAR cast exists within this many hours on at least one side.
-      interpolate_par_max_gap_hours: 12.0
       # Note: the MLD-based methods ('xing2012'/'xing2018'/'sackmann2008')
       #   read the 'MLD' variable produced by a preceding 'Mixed Layer Depth' step;
       #   configure the MLD method and thresholds there, not here.

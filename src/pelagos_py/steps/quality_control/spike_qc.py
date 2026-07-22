@@ -24,7 +24,6 @@ from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
 import matplotlib.pyplot as plt
 import xarray as xr
 import matplotlib
-from tqdm import tqdm
 
 
 @register_qc
@@ -101,10 +100,9 @@ class spike_qc(BaseQC):
             profile_numbers = np.unique(
                 self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS")
             )
-            for profile_number in tqdm(
+            for profile_number in self.log_progress(
                 profile_numbers,
-                colour="green",
-                desc=f"\033[97mProgress [{var}]\033[0m",
+                desc=f"[{var}]",
                 unit="prof",
             ):
                 # Subset the data

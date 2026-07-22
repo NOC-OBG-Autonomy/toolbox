@@ -26,7 +26,6 @@ import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import matplotlib as mpl
 from scipy import interpolate
-from tqdm import tqdm
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -325,12 +324,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         qualifying = (durations >= pd.Timedelta(hours=1)) & (counts > 3 * filter_size)
         n_to_process = min(max_profiles, int(qualifying.sum()))
 
-        pbar = tqdm(
-            total=n_to_process,
-            colour="green",
-            desc="\033[97mCT Lag Progress\033[0m",
-            unit="prof",
-        )
+        pbar = self.log_progress(total=n_to_process, desc="CT Lag", unit="prof")
 
         # Loop through all good profiles and store the optimal C-T lag for each.
         for i in indices:
@@ -453,12 +447,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         self.filter_params = {}
         self._thermal_scatter_data = None
 
-        for prof in tqdm(
-            profile_numbers,
-            colour="blue",
-            desc="\033[97mThermal Lag Progress\033[0m",
-            unit="prof",
-        ):
+        for prof in self.log_progress(profile_numbers, desc="Thermal Lag", unit="prof"):
 
             mask = self.data["PROFILE_NUMBER"] == prof
             nan_mask = self.data["TEMP"].isnull() | ~mask

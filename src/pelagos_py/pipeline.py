@@ -31,7 +31,8 @@ import tempfile
 
 from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
-from pelagos_py.utils.log_levels import STOP, ColorFormatter
+from pelagos_py.utils.log_levels import STOP
+from pelagos_py.utils.console import make_console_handler, progress_bar
 from pelagos_py.utils import diagnostic_capture
 
 REPORT_STEP_NAME = "Write Data Report (Python)"
@@ -86,18 +87,10 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
     )
 
     # Console handler. Always added so logs reach the console regardless of
-    # whether a log file is configured. Uses a color formatter so STOP/ERROR
-    # lines show up red in the terminal (file handler stays plain, below).
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(
-        ColorFormatter(
-            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-            "%Y-%m-%d %H:%M:%S",
-            stream=ch.stream,
-        )
-    )
-    logger.addHandler(ch)
+    # whether a log file is configured. Compact + coloured: it strips the
+    # timestamp/level/logger prefix (that detail lives in the file handler,
+    # below), greys step detail, and coexists with live progress bars.
+    logger.addHandler(make_console_handler(level))
 
     # Treat unset / explicit "none"-like values as "no log file". This catches
     # YAML's `log_file: None`, which parses to the string "None" (truthy), as
@@ -213,8 +206,8 @@ class Pipeline(ConfigMirrorMixin):
         steps_config : list of dict
             List of step configurations.
         """
-        self.logger.info("Assembling steps to run from config.")
-        for step in steps_config:
+        self.logger.info("Assembling steps to run from config.", extra={"console": False})
+        for step in progress_bar(steps_config, desc="Assembling steps", unit="step"):
             self.add_step(
                 step_name=step["name"],
                 parameters=step.get("parameters", {}),
@@ -279,7 +272,11 @@ class Pipeline(ConfigMirrorMixin):
         }
 
         self.steps.append(step_config)
-        self.logger.info(f"Step '{step_name}' added successfully!")
+        # Per-step confirmation stays in the log file; the console shows the
+        # assembly progress bar (see build_steps) instead.
+        self.logger.info(
+            "Step '%s' added successfully!", step_name, extra={"console": False}
+        )
 
         if run_immediately:
             self.logger.info(f"Running step '{step_name}' immediately.")
@@ -324,13 +321,18 @@ class Pipeline(ConfigMirrorMixin):
         self._step_index = step_index
 
         step = create_step(step_config, step_context)
-        self.logger.info(f"Executing: {step.name}")
+        # The console shows each step via its own log lines; the file keeps the
+        # plain "Executing:" record.
+        self.logger.info("Executing: %s", step.name, extra={"console": False})
 
         # The user's own diagnostics setting drives interactive display and
         # performance logging. Capture mode additionally force-enables the
         # diagnostic code path so its figures can be saved for the report,
         # without otherwise changing how the step reports performance.
         user_diagnostics = step.diagnostics
+        # True when diagnostics run only to feed the report (not user-requested),
+        # so a step can word its "generating plot" notice accordingly.
+        step._report_capture = bool(capture and not user_diagnostics)
         captured_images = []
         if capture:
             step.diagnostics = True

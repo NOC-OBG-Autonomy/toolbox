@@ -208,9 +208,48 @@ class BaseStep(ConfigMirrorMixin):
         except ImportError:
             pass
 
-    def log(self, message):
-        """Log an info-level message with step name prefix."""
-        self.logger.info("[%s] %s", self.name, message)
+    def log(self, message, console=True):
+        """Log an info-level message with step name prefix.
+
+        Set ``console=False`` to keep the line in the log file only (useful for
+        verbose provenance detail that would clutter the console).
+        """
+        self.logger.info("[%s] %s", self.name, message, extra={"console": console})
+
+    def log_generating_diagnostics(self):
+        """Log that diagnostics (plot or summary) are being produced.
+
+        Distinguishes diagnostics made only to feed the Python report
+        (``_report_capture`` set by the pipeline) from ones the user asked for with
+        ``diagnostics: true``.
+        """
+        if getattr(self, "_report_capture", False):
+            self.log("Generating diagnostics for report")
+        else:
+            self.log("Generating diagnostics")
+
+    def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
+        """Wrap a countable sub-loop as a standard pipeline progress bar.
+
+        Use this instead of calling ``tqdm`` directly so every step's loop looks
+        the same, pauses the step's elapsed timer while it runs (one live bar at a
+        time), and records a one-line summary in the log file for the report to
+        reuse. Drop-in for ``tqdm(iterable, ...)``::
+
+            for profile in self.log_progress(profiles, desc="spike qc [TEMP]", unit="prof"):
+                ...
+        """
+        from pelagos_py.utils.console import progress_bar
+
+        return progress_bar(
+            iterable,
+            desc=desc,
+            total=total,
+            unit=unit,
+            leave=leave,
+            logger=self.logger,
+            step_name=self.name,
+        )
 
     def log_warn(self, message, warning_type=UserWarning):
         """Log a warning-level message with step name prefix."""
