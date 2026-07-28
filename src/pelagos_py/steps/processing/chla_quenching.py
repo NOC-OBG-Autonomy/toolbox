@@ -66,49 +66,6 @@ CORRECTION_WARN_FACTOR = 5.0
 BBP_VAR_FALLBACKS = ["BBP700_BASELINE", "BBP700", "BBP532_BASELINE", "BBP532"]
 
 
-def estimate_euphotic_depth(par, depth):
-    """Estimate the euphotic depth (Zeu) from a downwelling PAR profile.
-
-    Fits ``ln(PAR)`` against depth over the profile (Beer-Lambert exponential
-    attenuation) and takes Zeu as the 1% light level, ``Zeu = ln(100) / Kd``.
-
-    Parameters
-    ----------
-    par : array-like
-        Downwelling PAR profile (positive values only are used).
-    depth : array-like
-        Depth (metres, positive down) at each PAR value.
-
-    Returns
-    -------
-    float
-        Euphotic depth (metres, positive down), or ``NaN`` when the fit is
-        invalid (fewer than 4 valid points, non-physical slope, or Zeu beyond
-        the ~186 m clear-water limit of Morel & Maritorena 2001).
-    """
-    par = np.asarray(par, dtype=float)
-    depth = np.asarray(depth, dtype=float)
-
-    # Only finite, positive PAR at finite depths can be log-fitted.
-    mask = np.isfinite(par) & (par > 0) & np.isfinite(depth)
-    if np.sum(mask) < 4:
-        return np.nan
-
-    z = depth[mask]
-    y = np.log(par[mask])
-    if z[0] > z[-1]:  # regression wants increasing depth
-        z = z[::-1]
-        y = y[::-1]
-
-    slope = linregress(z, y).slope
-    # Reject non-physical attenuation (too clear or too turbid).
-    if not np.isfinite(slope) or slope >= -0.005 or slope <= -1.0:
-        return np.nan
-
-    zeu = 4.605 / (-slope)
-    return zeu if zeu <= 186 else np.nan
-
-
 def check_chl_variables(self, allowed_requests):
     user_request = self.apply_to
     if user_request not in self.data.data_vars:
@@ -218,8 +175,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "type": str,
             "default": "DOWNWELLING_PAR",
             "description": (
-                "Downwelling PAR variable used to derive the euphotic depth "
-                "('biermann2015'/'swart2015') and the iPAR=15 depth ('xing2018')."
+                "Downwelling PAR variable. The euphotic depth (ZEU) and iPAR "
+                "isolume depth (Z_IPAR) are read from a preceding 'PAR Light "
+                "Depths' step, not derived here; this variable is used only by the "
+                "Terrats 2020 hybrid ('xing2018', hybrid=true), whose XB18 sigmoid "
+                "reads the raw PAR profile at depth."
             ),
         },
     }
@@ -278,17 +238,22 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # Methods differ in which auxiliary variables they need; check the ones
         # the chosen method relies on are present before doing any work.
         needs_mld = method_key in ("xing2012", "xing2018", "sackmann2008")
-        needs_par = method_key in (
-            "biermann2015", "xing2018", "hemsley2015", "thomalla2017", "swart2015",
+        # Euphotic depth (ZEU) and iPAR isolume depth (Z_IPAR) come from a
+        # preceding 'PAR Light Depths' step now, not from PAR derived in place.
+        needs_zeu = method_key in (
+            "biermann2015", "hemsley2015", "thomalla2017", "swart2015",
         )
+        needs_ipar = method_key in ("xing2018",)
         needs_bbp = method_key in (
             "xing2018", "hemsley2015", "thomalla2017", "sackmann2008", "swart2015",
         )
         missing = []
         if needs_mld and "MLD" not in self.data.data_vars:
             missing.append("MLD (add a Mixed Layer Depth step beforehand)")
-        if needs_par and self.par_var not in self.data.data_vars:
-            missing.append(f"{self.par_var} (PAR; set 'par_var' or add a step providing it)")
+        if needs_zeu and "ZEU" not in self.data.data_vars:
+            missing.append("ZEU (add a 'PAR Light Depths' step with compute_zeu beforehand)")
+        if needs_ipar and "Z_IPAR" not in self.data.data_vars:
+            missing.append("Z_IPAR (add a 'PAR Light Depths' step with compute_ipar beforehand)")
         if needs_bbp:
             resolved_bbp = self._resolve_bbp_var()
             if resolved_bbp is None:
@@ -318,6 +283,38 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 .agg({var: "median" for var in ["TIME", "LATITUDE", "LONGITUDE"]})
             )
 
+        # Global-disable rules keyed off what each daytime profile carries (night
+        # profiles are skipped by every method, so they never gate anything). Only
+        # the scalar-driven / hybrid methods need this, so skip the solar pass
+        # otherwise.
+        self._effective_hybrid = self.hybrid
+        gate = needs_zeu or needs_ipar or (method_key == "xing2018" and self.hybrid)
+        if gate and hasattr(self, "sun_args"):
+            day_pns = [
+                int(p) for p in self.sun_args.index if self._sun_elevation_for(int(p)) > 0
+            ]
+            # A scalar-driven method needs its scalar on every daytime profile;
+            # halt (rather than silently skip) if any lack it, pointing at the
+            # 'PAR Light Depths' interpolation toggle.
+            if needs_zeu:
+                self._require_scalar_on_days("ZEU", "interpolate_zeu", day_pns)
+            if needs_ipar:
+                self._require_scalar_on_days("Z_IPAR", "interpolate_ipar", day_pns)
+            # The Terrats 2020 hybrid de-quenches with the raw PAR profile at depth
+            # (the XB18 sigmoid), which this pipeline no longer reconstructs. If any
+            # daytime profile lacks a full PAR profile, disable the hybrid for the
+            # whole run and fall back to pure Xing 2018 S08+ (needs only Z_IPAR).
+            if method_key == "xing2018" and self.hybrid:
+                n_missing = self._count_profiles_without_full_par(day_pns)
+                if n_missing:
+                    self._effective_hybrid = False
+                    self.log_warn(
+                        f"{n_missing} daytime profile(s) lack a full {self.par_var} "
+                        f"profile; disabling the Terrats 2020 hybrid and applying pure "
+                        f"Xing 2018 S08+ to all profiles. Measure PAR on every cast (or "
+                        f"add a PAR-filling step) to enable the hybrid."
+                    )
+
         # Methods that correct day profiles against nighttime references build
         # those references once, up front, from the whole (uncorrected) dataset
         # (the per-profile loop below only sees one profile at a time). With
@@ -329,7 +326,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             self.diagnostics
             and hasattr(self, "sun_args")
             and self.bbp_var in self.data.data_vars
-            and self.par_var in self.data.data_vars
+            and "ZEU" in self.data.data_vars
         ):
             build_refs |= {"hemsley2015", "thomalla2017"}
         for ref_method in build_refs:
@@ -338,48 +335,42 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             # build logs quiet - only time/RAM should print in diagnostics mode.
             self._build_night_references(ref_method, quiet=self.diagnostics)
 
-        # Subset the data to just the variables the chosen method needs.
+        # Subset the data to just the variables the chosen method needs. ZEU /
+        # Z_IPAR are per-profile scalars from the 'PAR Light Depths' step; par_var
+        # is only needed by the effective Terrats hybrid (raw PAR at depth).
         subset_vars = ["PROFILE_NUMBER", "DEPTH", self.apply_to]
         if needs_mld:
             subset_vars.append("MLD")
         if needs_bbp:
             subset_vars.append(self.bbp_var)
-        if needs_par:
+        if needs_zeu:
+            subset_vars.append("ZEU")
+        if needs_ipar:
+            subset_vars.append("Z_IPAR")
+        if method_key == "xing2018" and self._effective_hybrid:
             subset_vars.append(self.par_var)
         data_subset = self.data[subset_vars]
-
-        # PAR is often logged on only one cast direction, so the other cast
-        # yields no euphotic depth and is left uncorrected. This step no longer
-        # fills PAR itself - warn and point at the dedicated 'Interpolate PAR'
-        # step so the config, not this step, does the filling.
-        if needs_par:
-            self._warn_missing_par(data_subset)
 
         # Calculation-only copies of each input, with flagged samples NaN'd out. Every
         # quantity the methods derive (quenching depth, fl:bbp ratios, in-MLD maxima)
         # reads these, so a flagged sample never informs a correction. The raw
         # variables stay the base the correction is written onto, so those samples are
-        # still corrected like any other. Each input is gated on its own flags, so a
-        # calculation combining two of them (e.g. fl:bbp) drops a sample if either is
-        # flagged.
+        # still corrected like any other. (ZEU / Z_IPAR are already QC-masked at
+        # source in the PAR Light Depths step, so they need no calc copy here.)
         calc_vars = [self.apply_to]
         if needs_bbp:
             calc_vars.append(self.bbp_var)
-        if needs_par:
-            calc_vars.append(self.par_var)
         # With diagnostics on the comparison panels re-run every method, so build the
-        # copies for every input they might read, not just the configured method's.
+        # backscatter copy even when the configured method doesn't read it.
         if self.diagnostics:
             calc_vars += [
                 var
-                for var in (self.bbp_var, self.par_var)
+                for var in (self.bbp_var,)
                 if var in self.data_copy.data_vars and var not in calc_vars
             ]
 
         for var in calc_vars:
             usable = self.calculation_mask(["PROFILE_NUMBER", "DEPTH", var])
-            # Sourced from data_copy so the calculation copy of PAR reflects the
-            # cast-filling above.
             calc = np.where(
                 usable, np.asarray(self.data_copy[var].values, dtype=float), np.nan
             )
@@ -430,35 +421,53 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         """
         return np.asarray(profile[f"{var}{CALC_SUFFIX}"].values, dtype=float)
 
-    def _warn_missing_par(self, data_subset):
-        """Warn if daytime casts lack usable PAR (they will be left uncorrected).
+    @staticmethod
+    def _profile_scalar(profile, name):
+        """The per-profile scalar ``name`` (broadcast across the profile) or NaN.
 
-        PAR-based methods derive a per-cast euphotic/iPAR depth from the PAR
-        profile; a cast with fewer than four finite positive PAR points yields
-        no depth and is skipped. This step no longer fills those casts itself -
-        it points at the dedicated 'Interpolate PAR' step so the fill lives in
-        the config. Night casts are ignored (every method skips them anyway).
+        ``ZEU``/``Z_IPAR``/``MLD`` carry one value per profile broadcast to every
+        measurement, so the first finite sample is that value.
         """
-        MIN_PTS = 4  # matches estimate_euphotic_depth's minimum for a Kd fit
-        par = np.asarray(data_subset[self.par_var].values, dtype=float)
-        depth = np.asarray(data_subset["DEPTH"].values, dtype=float)
-        pnum = data_subset["PROFILE_NUMBER"].values
+        vals = np.asarray(profile[name].values, dtype=float)
+        finite = vals[np.isfinite(vals)]
+        return float(finite[0]) if finite.size else np.nan
 
+    def _require_scalar_on_days(self, name, toggle, day_pns):
+        """Halt if any daytime profile lacks the per-profile scalar ``name``.
+
+        Global-disable rule: a scalar-driven method is all-or-nothing. ``toggle``
+        names the 'PAR Light Depths' interpolation switch that would fill the gap.
+        """
+        pnum = self.data["PROFILE_NUMBER"].values
+        vals = np.asarray(self.data[name].values, dtype=float)
+        missing = [pn for pn in day_pns if not np.any(np.isfinite(vals[pnum == pn]))]
+        if missing:
+            self.halt(
+                f"Method '{self.method}' needs {name} on every daytime profile, but "
+                f"{len(missing)} lack it. Enable '{toggle}' in the 'PAR Light Depths' "
+                f"step (or measure PAR on every cast) so {name} covers all profiles."
+            )
+
+    def _count_profiles_without_full_par(self, day_pns):
+        """Number of daytime profiles lacking a usable raw PAR profile at depth.
+
+        A profile needs at least four finite, positive PAR points (the minimum
+        for a Kd fit) for the Terrats XB18 sigmoid to run; fewer means the hybrid
+        cannot de-quench it. Returns the count over the given daytime profiles.
+        """
+        MIN_PTS = 4
+        if self.par_var not in self.data.data_vars:
+            return len(day_pns)
+        pnum = self.data["PROFILE_NUMBER"].values
+        par = np.asarray(self.data[self.par_var].values, dtype=float)
+        depth = np.asarray(self.data["DEPTH"].values, dtype=float)
         missing = 0
-        for pn in (int(p) for p in self.sun_args.index):
-            if self._sun_elevation_for(pn) <= 0:
-                continue  # night cast, skipped by every method regardless
+        for pn in day_pns:
             sel = pnum == pn
             z, p = depth[sel], par[sel]
             if np.count_nonzero(np.isfinite(z) & np.isfinite(p) & (p > 0)) < MIN_PTS:
                 missing += 1
-
-        if missing:
-            self.log_warn(
-                f"{missing} daytime cast(s) lack usable {self.par_var} and will be left "
-                f"uncorrected by '{self.method}'. Add an 'Interpolate PAR' step before "
-                f"this one to fill PAR onto those casts."
-            )
+        return missing
 
     def _resolve_bbp_var(self):
         """Return an available backscatter variable, preferring the configured one.
@@ -766,9 +775,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             finite_mld = finite_mld[np.isfinite(finite_mld)]
             z_win = float(finite_mld[0]) if finite_mld.size else np.nan
         else:
-            z_win = estimate_euphotic_depth(
-                self._calc_values(profile, self.par_var), depth
-            )
+            z_win = self._profile_scalar(profile, "ZEU")
         if not np.isfinite(z_win) or z_win <= 0:
             return chlf
 
@@ -903,7 +910,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         N = len(chlf)
 
         sun_angle = self._sun_elevation(profile)
-        zeu = estimate_euphotic_depth(self._calc_values(profile, self.par_var), depth)
+        zeu = self._profile_scalar(profile, "ZEU")
 
         if (
             sun_angle <= 0
@@ -963,7 +970,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         regression = getattr(self, "_hemsley_regression", None)
         sun_angle = self._sun_elevation(profile)
-        zeu = estimate_euphotic_depth(self._calc_values(profile, self.par_var), depth)
+        zeu = self._profile_scalar(profile, "ZEU")
         if (
             sun_angle <= 0
             or regression is None
@@ -1044,7 +1051,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             return chlf
 
         ref = self._night_refs[ref_idx]
-        zeu = estimate_euphotic_depth(self._calc_values(profile, self.par_var), depth)
+        zeu = self._profile_scalar(profile, "ZEU")
         if not np.isfinite(zeu) or zeu <= 0:
             return chlf
 
@@ -1166,14 +1173,17 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         See :meth:`_apply_xing_terrats` for the implementation.
         """
-        return self._apply_xing_terrats(profile, hybrid=self.hybrid)
+        return self._apply_xing_terrats(
+            profile, hybrid=getattr(self, "_effective_hybrid", self.hybrid)
+        )
 
     def _apply_xing_terrats(self, profile, hybrid):
         """Backscatter-based NPQ correction behind the 'xing2018' method.
 
         With ``hybrid=False`` the S08+ deep-mixing branch is always used
         (Xing 2018). With ``hybrid=True`` the shallow-mixing branch (Terrats
-        2020) is used when the iPAR=15 depth is deeper than the MLD.
+        2020) is used when the iPAR isolume depth (``Z_IPAR``) is deeper than the
+        MLD; that branch de-quenches with the raw PAR profile at depth.
 
         On any condition that prevents a correction (night, missing inputs,
         degenerate profile) the uncorrected fluorescence is returned unchanged.
@@ -1181,7 +1191,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
         bbp = np.asarray(profile[self.bbp_var].values, dtype=float)
-        ipar = np.asarray(profile[self.par_var].values, dtype=float)
         chlf_calc = self._calc_values(profile, self.apply_to)
         bbp_calc = self._calc_values(profile, self.bbp_var)
         N = len(chlf)
@@ -1191,10 +1200,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             sun_angle <= 0
             or N == 0
             or len(bbp) != N
-            or len(ipar) != N
             or np.all(np.isnan(chlf))
             or np.all(np.isnan(bbp))
-            or np.all(np.isnan(ipar))
         ):
             return chlf
 
@@ -1203,18 +1210,18 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         finite_mld = finite_mld[np.isfinite(finite_mld)]
         mld = float(finite_mld[0]) if finite_mld.size else np.nan
 
-        # Depth at which iPAR crosses 15 umol m-2 s-1, on the irregular grid.
-        zi_par15 = self._depth_of_ipar15(depth, self._calc_values(profile, self.par_var))
+        # iPAR isolume depth for this profile, read from the PAR Light Depths step.
+        z_ipar = self._profile_scalar(profile, "Z_IPAR")
 
         # Shallow mixing: light penetrates below the mixed layer.
-        shallow = hybrid and np.isfinite(zi_par15) and np.isfinite(mld) and zi_par15 > mld
+        shallow = hybrid and np.isfinite(z_ipar) and np.isfinite(mld) and z_ipar > mld
 
         if not shallow:
             # --- Deep-mixing S08+ (Xing 2018) --------------------------------
-            if not (np.isfinite(mld) and np.isfinite(zi_par15)):
+            if not (np.isfinite(mld) and np.isfinite(z_ipar)):
                 return chlf
-            # NPQ layer: shallower than the shallower of MLD and the iPAR=15 depth.
-            z_ref = min(mld, zi_par15)
+            # NPQ layer: shallower than the shallower of MLD and the isolume depth.
+            z_ref = min(mld, z_ipar)
             npq_layer = (depth <= z_ref) & np.isfinite(depth)
             # R_max is a derived reference, so it comes from the calculation copies.
             fratio = np.divide(
@@ -1232,7 +1239,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         else:
             # --- Shallow-mixing X18_S08 hybrid (Terrats 2020) ----------------
-            if not np.isfinite(mld):
+            # This branch alone needs the raw PAR profile at depth (the sigmoid);
+            # the run-level check disables the hybrid unless every daytime profile
+            # carries it, so par_var is present here.
+            ipar = np.asarray(profile[self.par_var].values, dtype=float)
+            if not np.isfinite(mld) or len(ipar) != N or np.all(np.isnan(ipar)):
                 return chlf
             r, ipar_mid, e = 0.092, 261.0, 2.2  # XB18 sigmoid parameters.
 
@@ -1269,28 +1280,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         result = np.fmax(chlf, chl_corr)
         self._warn_if_correction_blows_up(chlf, result)
         return result
-
-    @staticmethod
-    def _depth_of_ipar15(z, ipar):
-        """Depth (positive-down m) where downwelling iPAR crosses 15, or NaN.
-
-        Interpolates on the irregular profile grid; clamps to the deepest /
-        shallowest sample when 15 lies outside the observed PAR range.
-        """
-        valid = np.isfinite(z) & np.isfinite(ipar)
-        if np.sum(valid) < 2:
-            return np.nan
-        zi = z[valid]
-        pi = ipar[valid]
-        order = np.argsort(zi)  # surface -> deep
-        zi = zi[order]
-        pi = pi[order]
-        if 15 <= np.min(pi):  # whole profile brighter than 15 -> deepest sample
-            return float(zi[-1])
-        if 15 >= np.max(pi):  # whole profile darker than 15 -> surface
-            return 0.0
-        # PAR decreases with depth; reverse so np.interp sees increasing x.
-        return float(np.interp(15, pi[::-1], zi[::-1]))
 
     # ==================================================================
     # Diagnostics
@@ -1420,16 +1409,22 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
             return
 
+        # xing2018 needs Z_IPAR for the S08+ layer; the Terrats hybrid branch
+        # additionally needs the raw PAR profile, so require par_var only when the
+        # hybrid is (effectively) on for this run.
+        xing_needs = {"MLD", self.bbp_var, "Z_IPAR"}
+        if getattr(self, "_effective_hybrid", self.hybrid):
+            xing_needs = xing_needs | {self.par_var}
         implemented = {
             "xing2012": (self.apply_xing2012_quenching_correction, {"MLD"}),
             "biermann2015": (
                 self.apply_biermann2015_quenching_correction,
-                {self.par_var},
+                {"ZEU"},
             ),
             # Scored with whatever 'hybrid' is configured to, matching the run.
             "xing2018": (
                 self.apply_xing2018_quenching_correction,
-                {"MLD", self.bbp_var, self.par_var},
+                xing_needs,
             ),
             "sackmann2008": (
                 self.apply_sackmann2008_quenching_correction,
@@ -1437,7 +1432,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             ),
             "swart2015": (
                 self.apply_swart2015_quenching_correction,
-                {self.bbp_var, self.par_var},
+                {self.bbp_var, "ZEU"},
             ),
         }
         # The night-reference methods can only be scored when their references
@@ -1445,12 +1440,12 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if getattr(self, "_hemsley_regression", None) is not None:
             implemented["hemsley2015"] = (
                 self.apply_hemsley2015_quenching_correction,
-                {self.bbp_var, self.par_var},
+                {self.bbp_var, "ZEU"},
             )
         if getattr(self, "_thomalla_day_night", None):
             implemented["thomalla2017"] = (
                 self.apply_thomalla2017_quenching_correction,
-                {self.bbp_var, self.par_var},
+                {self.bbp_var, "ZEU"},
             )
         have = set(self.data_copy.data_vars)
         runnable = {k: fn for k, (fn, needs) in implemented.items() if needs <= have}

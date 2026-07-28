@@ -26,6 +26,7 @@ import polars as pl
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -150,12 +151,13 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
         """
 
         matplotlib.use("tkagg")
-        fig, axs = plt.subplots(
-            nrows=2, sharex=True, sharey=True, figsize=(12, 8), dpi=200
-        )
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True, sharey=True)
 
         plot_var = list(self.filter_settings.keys())[0]
-        for ax, data in zip(axs.flatten(), [self.unprocessed_df, self.df]):
-            ax.plot(data[plot_var])
+        titles = ["Original", "Interpolated"]
+        for ax, data, title in zip(axes[:, 0], [self.unprocessed_df, self.df], titles):
+            ax.plot(data[plot_var], color=fig_spec.CATEGORY[1])
+            fig_spec.style_axes(ax, title=title, ylabel=plot_var)
 
+        fig_spec.finish(fig, suptitle=f"Interpolation: {plot_var}")
         plt.show(block=True)

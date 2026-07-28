@@ -17,7 +17,7 @@
 """QC test to identify impossible dates in TIME variable."""
 
 #### Mandatory imports ####
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import polars as pl
@@ -25,6 +25,7 @@ import xarray as xr
 from datetime import datetime
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -76,27 +77,12 @@ class impossible_date_qc(BaseQC):
 
     def plot_diagnostics(self):
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=200)
-        for i in range(10):
-            # Plot by flag number
-            plot_data = self.df.with_row_index().filter(pl.col("TIME_QC") == i)
-            if len(plot_data) == 0:
-                continue
-
-            # Plot the data
-            ax.plot(
-                plot_data["index"],
-                plot_data["TIME"],
-                c=flag_cols[i],
-                ls="",
-                marker="o",
-                label=f"{i}",
-            )
-        ax.set(
-            title="Impossible Date Test",
-            xlabel="Index",
-            ylabel="TIME",
-        )
-        ax.legend(title="Flags", loc="upper right")
-        fig.tight_layout()
+        df = self.df.with_row_index()
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
+        fig_spec.flag_points(ax, df["index"], df["TIME"], df["TIME_QC"])
+        fig_spec.date_axis(ax, which="y")
+        fig_spec.style_axes(ax, xlabel="Index", ylabel="TIME")
+        fig_spec.legend(ax, title="Flags")
+        fig_spec.finish(fig, suptitle="Impossible Date Test")
         plt.show(block=True)

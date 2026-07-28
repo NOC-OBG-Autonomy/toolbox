@@ -18,12 +18,13 @@
 
 #### Mandatory imports ####
 import numpy as np
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
 import xarray as xr
 import matplotlib
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -146,13 +147,8 @@ class stuck_value_qc(BaseQC):
             return
 
         # Plot the QC output
-        fig, axs = plt.subplots(
-            nrows=len(self.plot), figsize=(8, 6), sharex=True, dpi=200
-        )
-        if len(self.plot) == 1:
-            axs = [axs]
-
-        for ax, var in zip(axs, self.plot):
+        fig, axes = fig_spec.new_fig(nrows=len(self.plot), sharex=True)
+        for ax, var in zip(axes[:, 0], self.plot):
             # Check that the user specified var exists in the test set
             if f"{var}_QC" not in self.qc_outputs:
                 print(
@@ -160,32 +156,12 @@ class stuck_value_qc(BaseQC):
                 )
                 continue
 
-            for i in range(10):
-                # Plot by flag number
-                plot_data = self.data[[var, "N_MEASUREMENTS"]].where(
-                    self.data[f"{var}_QC"] == i, drop=True
-                )
-
-                if len(plot_data[var]) == 0:
-                    continue
-
-                # Plot the data
-                ax.plot(
-                    plot_data["N_MEASUREMENTS"],
-                    plot_data[var],
-                    c=flag_cols[i],
-                    ls="",
-                    marker="o",
-                    label=f"{i}",
-                )
-
-            ax.set(
-                xlabel="Index",
-                ylabel=var,
-                title=f"{var} Stuck Value Test",
+            fig_spec.flag_points(
+                ax, self.data["N_MEASUREMENTS"], self.data[var], self.data[f"{var}_QC"]
             )
+            ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+            fig_spec.style_axes(ax, title=f"{var} Stuck Value Test", xlabel="Index", ylabel=ylabel)
+            fig_spec.legend(ax, title="Flags")
 
-            ax.legend(title="Flags", loc="upper right")
-
-        fig.tight_layout()
+        fig_spec.finish(fig)
         plt.show(block=True)

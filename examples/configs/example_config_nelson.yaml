@@ -180,10 +180,12 @@ steps:
             PRES: 2
             TEMP: 2
             CNDC: 2
-          also_flag: # Cross-flag the triad, as in the range test above
+          also_flag: # Cross-flag TEMP<->CNDC only. PRES is interpolated (complete)
+            # by this point while TEMP/CNDC are still ~77% missing, so cross-flagging
+            # PRES against them would drag its (valid) samples to 9 (missing).
             PRES: [CNDC, TEMP]
-            CNDC: [PRES, TEMP]
-            TEMP: [PRES, CNDC]
+            CNDC: [TEMP]
+            TEMP: [CNDC]
           window_size: 50 # Rolling-median window size in samples
           plot: [PRES, TEMP, CNDC]
     diagnostics: false
@@ -324,17 +326,18 @@ steps:
     diagnostics: false
 
 # This glider only logs PAR on upcasts, so downcasts (and gaps) have none.
-# Reconstruct them by interpolating the Kd-normalised attenuation structure and
-# atmospheric transmission - both slowly varying - and rescaling by the exact
-# clear-sky solar geometry at each target time, rather than interpolating PAR
-# directly (which would just try to guess the diurnal cycle). Only samples that
-# lack a usable measurement are filled, and they are flagged interpolated (8).
-  - name: Interpolate PAR
+# Derive the two per-profile light-depth scalars the quenching step consumes -
+# the euphotic depth (ZEU) and the iPAR=15 isolume depth (Z_IPAR) - on the casts
+# that carry PAR, and interpolate each in time onto the casts that don't. This
+# fills the scalars the corrections actually need without reconstructing the
+# whole PAR field.
+  - name: PAR Light Depths
     parameters:
-      target_variable: DOWNWELLING_PAR
-      reference_depth: 15.0    # Anchor depth (m)
-      max_depth: 100.0         # PAR is at the noise floor below this
-    diagnostics: false         # Plots measured / reconstructed / sun-normalised depth-time panels
+      par_var: DOWNWELLING_PAR
+      ipar_level: 15.0         # Isolume level (umol/m2/s) for Z_IPAR
+      interpolate_zeu: true    # Fill ZEU onto PAR-less casts (off: leave NaN)
+      interpolate_ipar: true   # Fill Z_IPAR onto PAR-less casts (off: leave NaN)
+    diagnostics: false         # Plots each scalar vs time: computed vs interpolated
 
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped

@@ -13,11 +13,11 @@ import xarray as xr
 import pytest
 
 Quenching = chla_quenching.chla_quenching_correction
-estimate_euphotic_depth = chla_quenching.estimate_euphotic_depth
 
 
 def make_profile(
-    chlf, depth, bbp=None, ipar=None, mld=None, profile_number=101.0, calc_mask=None
+    chlf, depth, bbp=None, ipar=None, mld=None, zeu=None, z_ipar=None,
+    profile_number=101.0, calc_mask=None,
 ):
     """Single-profile dataset in the step's positive-down DEPTH convention.
 
@@ -26,12 +26,18 @@ def make_profile(
     the profiles here carry them too. ``calc_mask`` is a boolean array marking the
     samples usable for calculation; by default every sample is usable, so the calc
     copies match the raw inputs.
+
+    The euphotic depth (``ZEU``) and iPAR isolume depth (``Z_IPAR``) are now
+    per-profile scalars supplied by the 'PAR Light Depths' step rather than derived
+    from PAR here, so they are broadcast across the profile (``NaN`` when absent).
     """
     n = len(chlf)
     data = {
         "PROFILE_NUMBER": ("N_MEASUREMENTS", np.full(n, profile_number)),
         "DEPTH": ("N_MEASUREMENTS", np.asarray(depth, dtype=float)),
         "CHLA": ("N_MEASUREMENTS", np.asarray(chlf, dtype=float)),
+        "ZEU": ("N_MEASUREMENTS", np.full(n, np.nan if zeu is None else float(zeu))),
+        "Z_IPAR": ("N_MEASUREMENTS", np.full(n, np.nan if z_ipar is None else float(z_ipar))),
     }
     if bbp is not None:
         data["BBP700"] = ("N_MEASUREMENTS", np.asarray(bbp, dtype=float))
@@ -62,30 +68,9 @@ def make_step(sun_angle=40.0, hybrid=True):
     return step
 
 
-# --- helpers ---------------------------------------------------------------
-
-
-def test_estimate_euphotic_depth_recovers_1pct_level():
-    """A clean exponential PAR profile yields Zeu = ln(100) / Kd."""
-    z = np.arange(0, 60, 2.0)
-    par = 100 * np.exp(-0.1 * z)  # Kd = 0.1 -> Zeu = 46.05 m
-    assert estimate_euphotic_depth(par, z) == pytest.approx(46.05, abs=0.1)
-
-
-def test_estimate_euphotic_depth_invalid_inputs_return_nan():
-    z = np.arange(0, 60, 2.0)
-    assert np.isnan(estimate_euphotic_depth(np.full(z.size, np.nan), z))  # no data
-    assert np.isnan(estimate_euphotic_depth(np.full(z.size, 50.0), z))  # flat -> no slope
-
-
-def test_depth_of_ipar15_interpolates_and_clamps():
-    z = np.array([0, 10, 20, 30.0])
-    assert Quenching._depth_of_ipar15(z, np.array([100, 40, 10, 2.0])) == pytest.approx(
-        18.333, abs=1e-2
-    )
-    # Whole profile brighter than 15 -> deepest sample; darker -> surface.
-    assert Quenching._depth_of_ipar15(z, np.array([100, 90, 80, 70.0])) == 30.0
-    assert Quenching._depth_of_ipar15(z, np.array([10, 8, 5, 2.0])) == 0.0
+# The euphotic depth these profiles imply (Kd=0.12 -> Zeu = 4.605/0.12 ~ 38.4 m);
+# it is now supplied as the ZEU scalar rather than derived from PAR in the step.
+_ZEU_38 = 38.4
 
 
 # --- Biermann 2015 ---------------------------------------------------------
@@ -95,7 +80,7 @@ def test_biermann_lifts_shallow_to_max_below_zeu():
     z_pos = np.array([2, 6, 10, 15, 20, 30, 45, 60, 80.0])
     chlf = np.array([0.4, 0.5, 0.7, 0.9, 1.0, 0.8, 0.4, 0.2, 0.1])
     ipar = 200 * np.exp(-0.12 * z_pos)  # Zeu ~ 38 m
-    prof = make_profile(chlf, z_pos, ipar=ipar)
+    prof = make_profile(chlf, z_pos, ipar=ipar, zeu=_ZEU_38)
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
@@ -116,7 +101,7 @@ def test_biermann_flagged_spike_cannot_set_the_reference_but_is_still_corrected(
     # The 9.9 spike at 6 m is flagged, so it is unusable for calculation.
     usable = np.ones(z_pos.size, dtype=bool)
     usable[1] = False
-    prof = make_profile(chlf, z_pos, ipar=ipar, calc_mask=usable)
+    prof = make_profile(chlf, z_pos, ipar=ipar, zeu=_ZEU_38, calc_mask=usable)
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
@@ -134,7 +119,7 @@ def test_biermann_unflagged_spike_does_set_the_reference():
     z_pos = np.array([2, 6, 10, 15, 20, 30, 45, 60, 80.0])
     chlf = np.array([0.4, 9.9, 0.7, 0.9, 1.0, 0.8, 0.4, 0.2, 0.1])
     ipar = 200 * np.exp(-0.12 * z_pos)
-    prof = make_profile(chlf, z_pos, ipar=ipar)
+    prof = make_profile(chlf, z_pos, ipar=ipar, zeu=_ZEU_38)
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
@@ -163,7 +148,7 @@ def _bbp_profile():
 def test_xing2018_resets_npq_layer_to_bbp_times_rmax(hybrid):
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # iPAR=15 ~ 21.6 m, above MLD=25 -> deep
-    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0, z_ipar=21.6)
 
     out = make_step(hybrid=hybrid).apply_xing2018_quenching_correction(prof)
 
@@ -177,8 +162,8 @@ def test_xing2018_resets_npq_layer_to_bbp_times_rmax(hybrid):
 def _shallow_mixing_profile():
     """Shallow mixing: iPAR=15 deep (~80 m) with a shallow MLD of 10 m."""
     z_pos, chlf, bbp = _bbp_profile()
-    ipar = 800 * np.exp(-0.05 * z_pos)
-    return chlf, make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=10.0)
+    ipar = 800 * np.exp(-0.05 * z_pos)  # iPAR=15 ~ 79.5 m, below MLD=10 -> shallow
+    return chlf, make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=10.0, z_ipar=79.5)
 
 
 def test_xing2018_hybrid_shallow_mixing_runs_and_never_reduces():
@@ -212,7 +197,7 @@ def test_xing2018_hybrid_off_uses_xing_branch_when_mixing_is_shallow():
 def test_backscatter_methods_are_noop_at_night(hybrid):
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)
-    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=25.0, z_ipar=21.6)
     step = make_step(sun_angle=-5.0, hybrid=hybrid)
     out = step.apply_xing2018_quenching_correction(prof)
     assert np.array_equal(out, chlf, equal_nan=True)
@@ -224,7 +209,7 @@ def test_backscatter_methods_are_noop_at_night(hybrid):
 def test_hemsley_replaces_euphotic_zone_with_bbp_estimate():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # Kd=0.12 -> Zeu ~ 38.4 m
-    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, zeu=_ZEU_38)
 
     step = make_step()
     step._hemsley_regression = {"slope": 100.0, "intercept": 0.1}
@@ -268,7 +253,7 @@ def test_quenching_depth_picks_steepest_gradient_point():
 def test_thomalla_corrects_above_quenching_depth_and_only_raises():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # Zeu ~ 38 m
-    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, zeu=_ZEU_38)
 
     step = make_step()
     # Night reference: constant fl:bbp ratio so corrected = 500*bbp (=1.0 at
@@ -314,7 +299,7 @@ def test_swart_uses_euphotic_zone_window():
     ipar = 200 * np.exp(-0.12 * z_pos)  # Kd=0.12 -> Zeu ~ 38 m
     # Zeu (~38 m) reaches the 30 m point, whose fl:bbp (0.8/1.5e-3 = 533) is the
     # window max; the surface-to-30 m layer is reset to bbp*533, deeper untouched.
-    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar)
+    prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, zeu=_ZEU_38)
 
     out = make_step().apply_swart2015_quenching_correction(prof)
 
@@ -343,59 +328,47 @@ def test_swart_no_par_signal_returns_unchanged():
     assert np.array_equal(out, chlf)
 
 
-# --- _warn_missing_par (flag casts lacking PAR) -----------------------------
-
-
-def _warn_step(day=(1, 2, 3)):
-    """Bare step for :meth:`_warn_missing_par` with three casts."""
-    step = Quenching.__new__(Quenching)
-    step.par_var = "DOWNWELLING_PAR"
-    step.method = "biermann2015"
-    step.warnings = []
-    step.log_warn = lambda m: step.warnings.append(m)
-    step._sun_cache = {pn: (10.0 if pn in day else -10.0) for pn in (1, 2, 3)}
-    step._sun_elevation_for = lambda pn: step._sun_cache[pn]
-    step.sun_args = xr.Dataset(
-        {"TIME": ("P", np.array(["2020-01-01T00:00", "2020-01-01T01:00",
-                                 "2020-01-01T02:00"], dtype="datetime64[ns]"))},
-        coords={"P": [1, 2, 3]},
-    ).to_pandas()
-    return step
-
-
-# cast 1 & 3 carry PAR; cast 2 (the middle one) has none.
+# --- global-disable helpers -------------------------------------------------
+# Three profiles; cast 1 & 3 carry PAR, cast 2 (middle) has none.
 _DEPTH = np.array([0, 10, 20, 30.0] * 3)
 _PNUM = np.array([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3.0])
 _PAR = np.array([100, 50, 25, 12, np.nan, np.nan, np.nan, np.nan, 200, 100, 50, 25.0])
 
 
-def _warn_subset(par):
-    return xr.Dataset(
-        {
-            "DOWNWELLING_PAR": ("N", par),
-            "DEPTH": ("N", _DEPTH),
-            "PROFILE_NUMBER": ("N", _PNUM),
-        }
-    )
+def _disable_step(scalar_name=None, scalar_values=None):
+    """Bare step whose ``self.data`` holds the three-cast fixture above."""
+    step = Quenching.__new__(Quenching)
+    step.par_var = "DOWNWELLING_PAR"
+    step.method = "biermann2015"
+    data = {
+        "DOWNWELLING_PAR": ("N_MEASUREMENTS", _PAR),
+        "DEPTH": ("N_MEASUREMENTS", _DEPTH),
+        "PROFILE_NUMBER": ("N_MEASUREMENTS", _PNUM),
+    }
+    if scalar_name is not None:
+        data[scalar_name] = ("N_MEASUREMENTS", np.asarray(scalar_values, dtype=float))
+    step.data = xr.Dataset(data)
+    return step
 
 
-def test_warn_missing_par_flags_daytime_cast_without_par():
-    step = _warn_step()
-    step._warn_missing_par(_warn_subset(_PAR))  # cast 2 daytime, no PAR
-    assert len(step.warnings) == 1
-    assert "1 daytime cast" in step.warnings[0]
-    assert "Interpolate PAR" in step.warnings[0]
+def test_count_profiles_without_full_par_counts_the_parless_daytime_cast():
+    step = _disable_step()
+    assert step._count_profiles_without_full_par([1, 2, 3]) == 1  # cast 2 only
+    assert step._count_profiles_without_full_par([1, 3]) == 0  # night cast excluded
 
 
-def test_warn_missing_par_quiet_when_all_daytime_casts_have_par():
-    step = _warn_step()
-    par = _PAR.copy()
-    par[_PNUM == 2] = [100, 50, 25, 12]  # cast 2 now carries PAR
-    step._warn_missing_par(_warn_subset(par))
-    assert step.warnings == []
+def test_count_profiles_without_full_par_all_missing_when_no_par_variable():
+    step = _disable_step()
+    del step.data["DOWNWELLING_PAR"]
+    assert step._count_profiles_without_full_par([1, 2, 3]) == 3
 
 
-def test_warn_missing_par_ignores_night_casts():
-    step = _warn_step(day=(1, 3))  # cast 2 (the PAR-less one) is night
-    step._warn_missing_par(_warn_subset(_PAR))
-    assert step.warnings == []
+def test_require_scalar_on_days_halts_when_a_daytime_profile_lacks_the_scalar():
+    # ZEU present on casts 1 & 3, NaN on cast 2.
+    zeu = np.where(_PNUM == 2, np.nan, 40.0)
+    step = _disable_step("ZEU", zeu)
+    step.halt = lambda msg: (_ for _ in ()).throw(RuntimeError(msg))
+    with pytest.raises(RuntimeError, match="interpolate_zeu"):
+        step._require_scalar_on_days("ZEU", "interpolate_zeu", [1, 2, 3])
+    # ...but not when the gap is a night profile that no method corrects.
+    step._require_scalar_on_days("ZEU", "interpolate_zeu", [1, 3])

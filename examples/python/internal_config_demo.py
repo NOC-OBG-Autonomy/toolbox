@@ -3,14 +3,18 @@ from pelagos_py.pipeline import Pipeline
 
 # Same pipeline as examples/configs/example_config_nelson.yaml, but defined inline and
 # passed to Pipeline(config=...) as a dict rather than loaded from a file. See
-# external_config_demo.py for the config_path route.
+# external_config_demo.py for the config_path route. Keep this string in sync with
+# example_config_nelson.yaml (it is a verbatim copy of that file's config body).
 BASE_CONFIG_YAML = """
+# Pipeline Configuration
 pipeline:
   name: Complete processing pipeline
   description: A complete demonstration pipeline using Nelson Near Realtime data.
   out_directory: examples/data/OG1/
   log_file: complete_processing.log
 
+# Steps in the pipeline
+# For further details on step parameters, see all_step_configs.yaml
 steps:
 
 # ===========================================================
@@ -168,10 +172,12 @@ steps:
             PRES: 2
             TEMP: 2
             CNDC: 2
-          also_flag: # Cross-flag the triad, as in the range test above
+          also_flag: # Cross-flag TEMP<->CNDC only. PRES is interpolated (complete)
+            # by this point while TEMP/CNDC are still ~77% missing, so cross-flagging
+            # PRES against them would drag its (valid) samples to 9 (missing).
             PRES: [CNDC, TEMP]
-            CNDC: [PRES, TEMP]
-            TEMP: [PRES, CNDC]
+            CNDC: [TEMP]
+            TEMP: [CNDC]
           window_size: 50 # Rolling-median window size in samples
           plot: [PRES, TEMP, CNDC]
     diagnostics: false
@@ -311,6 +317,20 @@ steps:
             DOWNWELLING_PAR: 5
     diagnostics: false
 
+# This glider only logs PAR on upcasts, so downcasts (and gaps) have none.
+# Derive the two per-profile light-depth scalars the quenching step consumes -
+# the euphotic depth (ZEU) and the iPAR=15 isolume depth (Z_IPAR) - on the casts
+# that carry PAR, and interpolate each in time onto the casts that don't. This
+# fills the scalars the corrections actually need without reconstructing the
+# whole PAR field.
+  - name: PAR Light Depths
+    parameters:
+      par_var: DOWNWELLING_PAR
+      ipar_level: 15.0         # Isolume level (umol/m2/s) for Z_IPAR
+      interpolate_zeu: true    # Fill ZEU onto PAR-less casts (off: leave NaN)
+      interpolate_ipar: true   # Fill Z_IPAR onto PAR-less casts (off: leave NaN)
+    diagnostics: false         # Plots each scalar vs time: computed vs interpolated
+
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped
 # without reordering steps.
@@ -378,8 +398,7 @@ steps:
 # variables produced/loaded above.
   - name: CHLA Quenching
     parameters:
-      method: thomalla2017     # Per-night fl:bbp ratio profile (needs BBP + PAR)
-      apply_to: CHLA           # Variable to correct (uses CHLA_ADJUSTED if it already exists)
+      method: thomalla2017
     diagnostics: false
 
 # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep and
@@ -390,7 +409,8 @@ steps:
         range qc:
           variable_ranges:
             CHLA_ADJUSTED:
-              3: [0.14, 50, outside]
+              2: [0, 70, inside]
+              3: [0, 50, outside]
               4: [0, 100, outside]
     diagnostics: false
 

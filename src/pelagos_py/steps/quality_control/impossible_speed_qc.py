@@ -17,7 +17,7 @@
 """QC test to identify impossible speeds in glider data."""
 
 #### Mandatory imports ####
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
@@ -25,6 +25,7 @@ import polars as pl
 import xarray as xr
 import numpy as np
 import matplotlib
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -98,32 +99,17 @@ class impossible_speed_qc(BaseQC):
 
     def plot_diagnostics(self):
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=200)
-
-        for i in range(10):
-            # Plot by flag number
-            plot_data = self.df.filter(pl.col("LATITUDE_QC") == i)
-            if len(plot_data) == 0:
-                continue
-
-            # Plot the data
-            ax.plot(
-                plot_data["TIME"],
-                plot_data["absolute_speed"],
-                c=flag_cols[i],
-                ls="",
-                marker="o",
-                label=f"{i}",
-            )
-
-        ax.set(
-            title="Impossible Speed Test",
-            xlabel="Time (s)",
-            ylabel="Absolute Horizontal Speed (m/s)",
-            ylim=(0, 4),
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
+        fig_spec.flag_points(
+            ax, self.df["TIME"], self.df["absolute_speed"], self.df["LATITUDE_QC"]
         )
+        fig_spec.date_axis(ax, which="x")
+        ax.set_ylim(0, 4)
         ax.axhline(3, ls="--", c="k")
-        ax.legend(title="Flags", loc="upper right")
-
-        fig.tight_layout()
+        fig_spec.style_axes(
+            ax, xlabel="Time", ylabel="Absolute Horizontal Speed (m/s)"
+        )
+        fig_spec.legend(ax, title="Flags")
+        fig_spec.finish(fig, suptitle="Impossible Speed Test")
         plt.show(block=True)

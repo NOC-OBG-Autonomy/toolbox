@@ -21,6 +21,9 @@ from pelagos_py.steps.base_qc import BaseQC
 
 #### Custom imports ####
 # any additional imports required for the test go here
+import matplotlib
+import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec  # shared diagnostic-plot style
 
 
 # @register_qc  # Uncomment when implementing
@@ -45,5 +48,14 @@ class blank_qc(BaseQC):
         return self.flags
 
     def plot_diagnostics(self):
-        # plt.show(block=True)
-        pass
+        # Style every diagnostic with the shared fig_spec helpers so plots stay
+        # uniform and dashboard-interactive. Example: one QC-flag panel.
+        matplotlib.use("tkagg")
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
+        # fig_spec.flag_points(ax, self.data["N_MEASUREMENTS"], self.data[var],
+        #                      self.data[f"{var}_QC"])
+        fig_spec.style_axes(ax, xlabel="Index", ylabel="")
+        fig_spec.legend(ax, title="Flags")
+        fig_spec.finish(fig, suptitle=self.qc_name)
+        plt.show(block=True)

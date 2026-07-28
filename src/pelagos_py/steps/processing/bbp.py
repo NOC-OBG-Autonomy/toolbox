@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import glidertools as gt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -221,45 +222,27 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
         mpl.use("tkagg")
 
         raw = self.data[self.apply_to]
+        time = self.data["TIME"]
 
-        # Plot
-        fig, axs = plt.subplots(
-            nrows=2, figsize=(10, 6), height_ratios=(2, 1), sharex=True
-        )
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True, height_ratios=(2, 1))
+        ax1, ax2 = axes[0][0], axes[1][0]
 
-        # Plot original and baseline time series
-        axs[0].plot(
-            self.data["TIME"][~np.isnan(raw)],
-            raw[~np.isnan(raw)],
-            ls="--",
-            c="gray",
-            label="Raw",
-        )
-        axs[0].plot(
-            self.data["TIME"][~np.isnan(self.baseline)],
-            self.baseline[~np.isnan(self.baseline)],
-            c="b",
-            alpha=0.5,
-            label="Baseline",
-        )
+        # Panel 1: raw and baseline time series.
+        ax1.plot(time[~np.isnan(raw)], raw[~np.isnan(raw)],
+                 ls="--", color=fig_spec.FLAGGED, label="Raw")
+        ax1.plot(time[~np.isnan(self.baseline)], self.baseline[~np.isnan(self.baseline)],
+                 color=fig_spec.CATEGORY[1], alpha=fig_spec.ALPHA, label="Baseline")
 
-        # Plot spike points
-        axs[1].plot(
-            self.data["TIME"][~np.isnan(self.spikes)],
-            self.spikes[~np.isnan(self.spikes)],
-            marker="o",
-            c="r",
-            label="Spikes",
-        )
+        # Panel 2: isolated spike points.
+        fig_spec.points(ax2, time[~np.isnan(self.spikes)], self.spikes[~np.isnan(self.spikes)],
+                        color=fig_spec.CATEGORY[2], label="Spikes")
 
-        for ax in axs:
-            ax.legend(loc="upper right")
+        ylabel = fig_spec.axis_label(self.apply_to, self.data[self.apply_to].attrs.get("units"))
+        for ax in (ax1, ax2):
+            fig_spec.date_axis(ax, which="x")
+            fig_spec.legend(ax)
+        fig_spec.style_axes(ax1, ylabel=ylabel)
+        fig_spec.style_axes(ax2, xlabel="Time", ylabel=ylabel)
 
-        ax.set(
-            xlabel="Time",
-            ylabel=self.apply_to,
-            title=f"{self.apply_to}: Baseline Timeseries & Spikes",
-        )
-
-        fig.tight_layout()
+        fig_spec.finish(fig, suptitle=f"{self.apply_to}: Baseline Timeseries & Spikes")
         plt.show(block=True)

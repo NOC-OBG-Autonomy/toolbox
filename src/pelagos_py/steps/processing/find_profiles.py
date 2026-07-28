@@ -25,8 +25,8 @@ import numpy as np
 import xarray as xr
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
 from scipy.signal import find_peaks
+from pelagos_py.utils import fig_spec
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -721,43 +721,34 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         checked at a glance.
         """
         matplotlib.use("tkagg")
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True, height_ratios=(3, 1))
+        ax1, ax2 = axes[0][0], axes[1][0]
 
-        # Panel 1: Phase mapping
+        # Panel 1: high-resolution phase mapping, one series per scientific phase.
         for p_val in range(8):
             mask = mapped_df["SCI_PHASE"] == p_val
             n_points = mask.sum()
-            
             if n_points > 0:
                 t_data = mapped_df["TIME"][mask]
                 depth_data = mapped_df[depth_col][mask]
             else:
-                t_data = []
-                depth_data = []
-                
+                t_data, depth_data = [], []
             lbl = f"{PHASE_NAMES.get(p_val, f'Phase {p_val}')} (n={n_points})"
-            z_ord = 6 if p_val == 5 else 3
-                
-            ax1.plot(t_data, depth_data, linestyle="none", marker=".", markersize=8, 
-                    color=PHASE_COLOURS.get(p_val, "black"), label=lbl, zorder=z_ord)
+            fig_spec.points(ax1, t_data, depth_data,
+                            color=PHASE_COLOURS.get(p_val, "black"), label=lbl)
 
         ax1.invert_yaxis()
-        ax1.set_ylabel("Pressure/Depth")
-        ax1.set_title("Diagnostics | High Resolution Phase Mapping")
-        leg = ax1.legend(loc="upper right", fontsize=10, markerscale=2.0)
-        leg.set_zorder(100) 
-        ax1.grid(alpha=0.3)
+        fig_spec.style_axes(ax1, title="High Resolution Phase Mapping", ylabel="Pressure/Depth")
+        fig_spec.legend(ax1)
 
-        # Panel 2: Profile ID & Cycle
-        ax2.plot(mapped_df["TIME"], mapped_df["PROFILE_NUMBER"], color="tab:blue", marker=".", ls="", ms=4, label="Profile Number")
-        ax2.plot(mapped_df["TIME"], mapped_df["CYCLE"], color="tab:red", marker=".", ls="", ms=4, label="Cycle Number")
-        ax2.set_ylabel("ID / Cycle")
-        ax2.set_xlabel("Time")
-        ax2.legend(loc="upper left")
-        ax2.grid(alpha=0.3)
+        # Panel 2: derived profile & cycle numbering.
+        fig_spec.points(ax2, mapped_df["TIME"], mapped_df["PROFILE_NUMBER"],
+                        color=fig_spec.CATEGORY[1], label="Profile Number")
+        fig_spec.points(ax2, mapped_df["TIME"], mapped_df["CYCLE"],
+                        color=fig_spec.CATEGORY[2], label="Cycle Number")
+        fig_spec.date_axis(ax2, which="x")
+        fig_spec.style_axes(ax2, xlabel="Time", ylabel="ID / Cycle")
+        fig_spec.legend(ax2)
 
-        ax2.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
-        fig.autofmt_xdate()
-        fig.tight_layout()
-        
+        fig_spec.finish(fig, suptitle="Find Profiles Diagnostics")
         plt.show(block=True)

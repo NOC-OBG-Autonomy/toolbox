@@ -30,6 +30,7 @@ from pelagos_py.steps.base_step import BaseStep, register_step
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -187,33 +188,26 @@ class CorrectValues(BaseStep):
             xlabel = "Sample index"
 
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
 
-        ax.plot(
-            x, self._raw_data, marker="o", ls="", color="#b2bec3",
-            markersize=1.5, alpha=0.7, label="Raw",
-        )
-        units = str(self.data[var].attrs.get("units", "")).strip()
-        corrected_label = f"Corrected ({units})" if units else "Corrected"
-        ax.plot(
-            x, corrected, marker="o", ls="", color="#0984e3",
-            markersize=1.5, alpha=0.7, label=corrected_label,
-        )
+        fig_spec.points(ax, x, self._raw_data, color=fig_spec.FLAGGED, label="Raw")
+        fig_spec.points(ax, x, corrected, color=fig_spec.CATEGORY[1], label="Corrected")
 
         if self.expected_range is not None:
             lo, hi = float(self.expected_range[0]), float(self.expected_range[1])
             ax.axhline(hi, color="black", linestyle="--", alpha=0.6, linewidth=1, label=f"Max ({hi})")
             ax.axhline(lo, color="black", linestyle="--", alpha=0.6, linewidth=1, label=f"Min ({lo})")
 
-        ax.set_ylabel(var, fontsize=8)
-        ax.set_xlabel(xlabel, fontsize=8)
-        ax.grid(True, alpha=0.3)
-        ax.tick_params(axis="both", which="major", labelsize=8)
-        ax.legend(loc="upper right", fontsize=8, framealpha=0.9, fancybox=True)
+        if xlabel == "Time":
+            fig_spec.date_axis(ax, which="x")
+        ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+        fig_spec.style_axes(ax, xlabel=xlabel, ylabel=ylabel)
+        fig_spec.legend(ax)
 
-        fig.suptitle(
-            f"Value Correction: {var}\n(corrected = {self.slope} * value + {self.intercept})",
-            fontsize=10, fontweight="bold",
+        fig_spec.finish(
+            fig,
+            suptitle=f"Value Correction: {var}\n"
+            f"(corrected = {self.slope} * value + {self.intercept})",
         )
-        fig.tight_layout()
         plt.show(block=True)

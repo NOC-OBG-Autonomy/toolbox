@@ -32,12 +32,13 @@ plot every flagged variable when diagnostics are enabled.
 
 #### Mandatory imports ####
 import numpy as np
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import matplotlib
 import matplotlib.pyplot as plt
 import xarray as xr
+from pelagos_py.utils import fig_spec
 
 
 # Argo flag-merge matrix used when propagating an "also_flag" flag onto a companion:
@@ -61,18 +62,6 @@ QC_COMBINATRIX = np.array(
         [9, 9, 9, 9, 9, 9, 9, 9, 9, 9],
     ]
 )
-
-FLAG_MEANINGS = {
-    0: "no QC",
-    1: "good",
-    2: "prob good",
-    3: "prob bad",
-    4: "bad",
-    5: "changed",
-    8: "interp",
-    9: "missing",
-}
-
 
 @register_qc
 class range_qc(BaseQC):
@@ -379,30 +368,12 @@ class range_qc(BaseQC):
             x = self.data["N_MEASUREMENTS"].values
             xlabel = "Index"
 
-        n_vars = len(plot_vars)
-        fig, axes = plt.subplots(
-            n_vars, 1, sharex=True, figsize=(10, 2.6 * n_vars + 1.5), dpi=150
-        )
-        if n_vars == 1:
-            axes = [axes]
-
-        for ax, var in zip(axes, plot_vars):
-            vals = self.data[var].values
-            qc = self.flags[f"{var}_QC"].values
-
-            # Plot points coloured by flag (drawn low-to-high so worse flags sit on top).
-            for flag in range(10):
-                mask = qc == flag
-                if not np.any(mask):
-                    continue
-                ax.plot(
-                    x[mask], vals[mask], ls="", marker="o", markersize=2.5,
-                    alpha=0.8, color=flag_cols[flag],
-                    label=f"{flag} ({FLAG_MEANINGS.get(flag, 'n/a')})", zorder=flag,
-                )
+        fig, axes = fig_spec.new_fig(nrows=len(plot_vars), sharex=True)
+        for ax, var in zip(axes[:, 0], plot_vars):
+            fig_spec.flag_points(ax, x, self.data[var].values, self.flags[f"{var}_QC"].values)
 
             # Range boundaries for variables that define their own ranges (a single
-            # scalar is drawn as one line).
+            # scalar is drawn as one line, coloured by the flag it triggers).
             if var in self.variable_ranges:
                 for flag, bounds in self.variable_ranges[var].items():
                     for band in self._iter_bands(bounds):
@@ -413,20 +384,17 @@ class range_qc(BaseQC):
                                 continue
                             ax.axhline(
                                 bound, ls="--", lw=1, alpha=0.6,
-                                color=flag_cols.get(flag, "k"),
+                                color=fig_spec.FLAG_COLOURS.get(flag, "k"),
                             )
 
-            ax.set_ylabel(var, fontsize=8)
-            ax.grid(True, alpha=0.3)
-            ax.tick_params(axis="both", which="major", labelsize=8)
+            ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+            fig_spec.style_axes(ax, ylabel=ylabel)
             if var == "PRES":
                 ax.invert_yaxis()
-            ax.legend(
-                title="Flag", loc="center left", bbox_to_anchor=(1.01, 0.5),
-                fontsize=7, framealpha=0.9, fancybox=True,
-            )
+            fig_spec.legend(ax, title="Flag")
 
-        axes[-1].set_xlabel(xlabel, fontsize=8)
-        fig.suptitle("Range QC", fontsize=10, fontweight="bold")
-        fig.tight_layout(rect=[0, 0, 0.83, 1])
+        if xlabel == "Time":
+            fig_spec.date_axis(axes[-1][0], which="x")
+        fig_spec.style_axes(axes[-1][0], xlabel=xlabel)
+        fig_spec.finish(fig, suptitle="Range QC")
         plt.show(block=True)
