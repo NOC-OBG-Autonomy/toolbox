@@ -73,7 +73,14 @@ class BaseQC:
     def __init__(self, data, **kwargs):
         # data may be None when a test is instantiated  to
         # introspect its required/provided variables from its parameters.
-        self.data = data.copy(deep=True) if data is not None else None
+        # Hold a reference rather than a deep copy: on a ~900 MB dataset the
+        # per-test full copy was the main QC RAM ratchet. Safe only because no
+        # test mutates self.data in place — tests read it, or re-narrow via
+        # self.data = self.data[self.required_variables] and add/replace _QC
+        # columns (new arrays), never writing into the shared arrays. A future
+        # test doing self.data[existing_var][mask] = ... would corrupt the live
+        # dataset, so keep to that contract or copy locally in that test.
+        self.data = data if data is not None else None
 
         # Connect to the main pipeline logging hierarchy
         self.logger = logging.getLogger(f"pelagos_py.pipeline.qc.{self.qc_name.replace(' ', '_')}")
