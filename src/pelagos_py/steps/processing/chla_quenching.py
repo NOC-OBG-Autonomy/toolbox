@@ -182,6 +182,29 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "reads the raw PAR profile at depth."
             ),
         },
+        "day_min_elevation": {
+            "type": float,
+            "default": 0.0,
+            "description": (
+                "Solar elevation (degrees) above which a profile counts as "
+                "daytime; the quenching correction is applied only to profiles "
+                "above this. Default 0.0 (sun on the horizon); raise it (e.g. 5) "
+                "to skip low-sun profiles near sunrise/sunset."
+            ),
+        },
+        "night_max_elevation": {
+            "type": float,
+            "default": 0.0,
+            "description": (
+                "Solar elevation (degrees) below which a profile counts as "
+                "nighttime; only these profiles inform the night "
+                "fluorescence:bbp references used by 'hemsley2015'/'thomalla2017'. "
+                "Default 0.0; lower it (e.g. -5) to build references only from "
+                "profiles well after dusk. Profiles between night_max_elevation "
+                "and day_min_elevation (twilight) are neither corrected nor used "
+                "as references."
+            ),
+        },
     }
 
     # ==================================================================
@@ -211,7 +234,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # Check this step is being applied to a valid variable.
         self.apply_to, self.output_as = check_chl_variables(
             self,
-            ["CHLA", "CHLA_ADJUSTED" "CHLA_FLUORESCENCE", "CHLA_FLUORESCENCE_ADJUSTED"],
+            ["CHLA", "CHLA_ADJUSTED", "CHLA_FLUORESCENCE", "CHLA_FLUORESCENCE_ADJUSTED"],
         )
         # If a new "_ADJUSTED" variable will be needed, create it
         if self.apply_to != self.output_as:
@@ -239,7 +262,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # the chosen method relies on are present before doing any work.
         needs_mld = method_key in ("xing2012", "xing2018", "sackmann2008")
         # Euphotic depth (ZEU) and iPAR isolume depth (Z_IPAR) come from a
-        # preceding 'PAR Light Depths' step now, not from PAR derived in place.
+        # preceding 'Interpolate PAR' step now, not from PAR derived in place.
         needs_zeu = method_key in (
             "biermann2015", "hemsley2015", "thomalla2017", "swart2015",
         )
@@ -251,9 +274,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if needs_mld and "MLD" not in self.data.data_vars:
             missing.append("MLD (add a Mixed Layer Depth step beforehand)")
         if needs_zeu and "ZEU" not in self.data.data_vars:
-            missing.append("ZEU (add a 'PAR Light Depths' step with compute_zeu beforehand)")
+            missing.append("ZEU (add a 'Interpolate PAR' step with compute_zeu beforehand)")
         if needs_ipar and "Z_IPAR" not in self.data.data_vars:
-            missing.append("Z_IPAR (add a 'PAR Light Depths' step with compute_ipar beforehand)")
+            missing.append("Z_IPAR (add a 'Interpolate PAR' step with compute_ipar beforehand)")
         if needs_bbp:
             resolved_bbp = self._resolve_bbp_var()
             if resolved_bbp is None:
@@ -291,11 +314,13 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         gate = needs_zeu or needs_ipar or (method_key == "xing2018" and self.hybrid)
         if gate and hasattr(self, "sun_args"):
             day_pns = [
-                int(p) for p in self.sun_args.index if self._sun_elevation_for(int(p)) > 0
+                int(p)
+                for p in self.sun_args.index
+                if self._sun_elevation_for(int(p)) > self.day_min_elevation
             ]
             # A scalar-driven method needs its scalar on every daytime profile;
             # halt (rather than silently skip) if any lack it, pointing at the
-            # 'PAR Light Depths' interpolation toggle.
+            # 'Interpolate PAR' interpolation toggle.
             if needs_zeu:
                 self._require_scalar_on_days("ZEU", "interpolate_zeu", day_pns)
             if needs_ipar:
@@ -336,7 +361,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             self._build_night_references(ref_method, quiet=self.diagnostics)
 
         # Subset the data to just the variables the chosen method needs. ZEU /
-        # Z_IPAR are per-profile scalars from the 'PAR Light Depths' step; par_var
+        # Z_IPAR are per-profile scalars from the 'Interpolate PAR' step; par_var
         # is only needed by the effective Terrats hybrid (raw PAR at depth).
         subset_vars = ["PROFILE_NUMBER", "DEPTH", self.apply_to]
         if needs_mld:
@@ -356,7 +381,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # reads these, so a flagged sample never informs a correction. The raw
         # variables stay the base the correction is written onto, so those samples are
         # still corrected like any other. (ZEU / Z_IPAR are already QC-masked at
-        # source in the PAR Light Depths step, so they need no calc copy here.)
+        # source in the Interpolate PAR step, so they need no calc copy here.)
         calc_vars = [self.apply_to]
         if needs_bbp:
             calc_vars.append(self.bbp_var)
@@ -436,7 +461,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         """Halt if any daytime profile lacks the per-profile scalar ``name``.
 
         Global-disable rule: a scalar-driven method is all-or-nothing. ``toggle``
-        names the 'PAR Light Depths' interpolation switch that would fill the gap.
+        names the 'Interpolate PAR' interpolation switch that would fill the gap.
         """
         pnum = self.data["PROFILE_NUMBER"].values
         vals = np.asarray(self.data[name].values, dtype=float)
@@ -444,7 +469,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if missing:
             self.halt(
                 f"Method '{self.method}' needs {name} on every daytime profile, but "
-                f"{len(missing)} lack it. Enable '{toggle}' in the 'PAR Light Depths' "
+                f"{len(missing)} lack it. Enable '{toggle}' in the 'Interpolate PAR' "
                 f"step (or measure PAR on every cast) so {name} covers all profiles."
             )
 
@@ -569,7 +594,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         """Build the nighttime references used by 'hemsley2015'/'thomalla2017'.
 
         Runs once in :meth:`run` before the per-profile loop. Profiles are
-        classified day/night by solar elevation (``> 0`` day, ``< 0`` night)
+        classified day/night by solar elevation (``> day_min_elevation`` day,
+        ``< night_max_elevation`` night; both default to 0°)
         from the per-profile surface fix in ``self.sun_args``.
 
         - ``hemsley2015`` fits one global fluorescence-vs-backscatter regression
@@ -586,7 +612,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         elev = {pn: self._sun_elevation_for(pn) for pn in pns}
         times = {pn: pd.to_datetime(self.sun_args.loc[pn, "TIME"]).value for pn in pns}
         pns_time = sorted(pns, key=lambda p: times[p])
-        is_night = {pn: elev[pn] < 0 for pn in pns}
+        is_night = {pn: elev[pn] < self.night_max_elevation for pn in pns}
 
         pnum = self.data["PROFILE_NUMBER"].values
         z_all = np.asarray(self.data["DEPTH"].values, dtype=float)
@@ -657,7 +683,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         day_night = {}
         if night_refs:
             night_times = [ref["time"] for ref in night_refs]
-            for pn in (p for p in pns if elev[p] > 0):
+            for pn in (p for p in pns if elev[p] > self.day_min_elevation):
                 dt = times[pn]
                 preceding = [i for i, nt in enumerate(night_times) if nt <= dt]
                 if preceding:
@@ -761,7 +787,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         sun_angle = self._sun_elevation(profile)
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or N == 0
             or len(bbp) != N
             or np.all(np.isnan(chlf))
@@ -863,7 +889,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         solar_position = pvlib.solarposition.get_solarposition(time_utc, lat, long)
         sun_angle = solar_position["elevation"].values
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or N == 0
             or len(depth) != N
             or not np.isfinite(mld)
@@ -913,7 +939,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         zeu = self._profile_scalar(profile, "ZEU")
 
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or N == 0
             or len(depth) != N
             or not np.isfinite(zeu)
@@ -972,7 +998,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         sun_angle = self._sun_elevation(profile)
         zeu = self._profile_scalar(profile, "ZEU")
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or regression is None
             or N == 0
             or len(bbp) != N
@@ -1042,7 +1068,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ref_idx = day_night.get(profile_number)
         sun_angle = self._sun_elevation(profile)
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or ref_idx is None
             or N == 0
             or len(bbp) != N
@@ -1197,7 +1223,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         sun_angle = self._sun_elevation(profile)
         if (
-            sun_angle <= 0
+            sun_angle <= self.day_min_elevation
             or N == 0
             or len(bbp) != N
             or np.all(np.isnan(chlf))
@@ -1210,7 +1236,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         finite_mld = finite_mld[np.isfinite(finite_mld)]
         mld = float(finite_mld[0]) if finite_mld.size else np.nan
 
-        # iPAR isolume depth for this profile, read from the PAR Light Depths step.
+        # iPAR isolume depth for this profile, read from the Interpolate PAR step.
         z_ipar = self._profile_scalar(profile, "Z_IPAR")
 
         # Shallow mixing: light penetrates below the mixed layer.

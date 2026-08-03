@@ -130,7 +130,7 @@ def depth_of_ipar(depth, ipar, level):
 
 
 @register_step
-class PARLightDepths(BaseStep, QCHandlingMixin):
+class InterpolatePAR(BaseStep, QCHandlingMixin):
     """Derive the euphotic depth ``ZEU`` and the iPAR isolume depth ``Z_IPAR``.
 
     Both are per-profile scalars found from the downwelling PAR profile and
@@ -158,7 +158,7 @@ class PARLightDepths(BaseStep, QCHandlingMixin):
     .. code-block:: yaml
 
         steps:
-          - name: PAR Light Depths
+          - name: Interpolate PAR
             parameters:
               par_var: DOWNWELLING_PAR
               ipar_level: 15.0
@@ -170,7 +170,7 @@ class PARLightDepths(BaseStep, QCHandlingMixin):
     (``calculation_flag_filter``), exactly as in the other processing steps.
     """
 
-    step_name = "PAR Light Depths"
+    step_name = "Interpolate PAR"
     # DOWNWELLING_PAR is file-native and validated at run time in run(), not
     # listed here — the pipeline's pre-run check only understands standard and
     # step-produced variables, so listing a file-native one falsely fails it.
@@ -231,7 +231,7 @@ class PARLightDepths(BaseStep, QCHandlingMixin):
         for var in (par_var, depth_var, "PROFILE_NUMBER", "TIME"):
             if var not in self.data:
                 self.halt(
-                    f"'{var}' is required by PAR Light Depths but is missing from the "
+                    f"'{var}' is required by Interpolate PAR but is missing from the "
                     "dataset. Run the steps that provide it first."
                 )
         if not (self.compute_zeu or self.compute_ipar):

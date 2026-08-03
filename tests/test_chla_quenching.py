@@ -28,7 +28,7 @@ def make_profile(
     copies match the raw inputs.
 
     The euphotic depth (``ZEU``) and iPAR isolume depth (``Z_IPAR``) are now
-    per-profile scalars supplied by the 'PAR Light Depths' step rather than derived
+    per-profile scalars supplied by the 'Interpolate PAR' step rather than derived
     from PAR here, so they are broadcast across the profile (``NaN`` when absent).
     """
     n = len(chlf)

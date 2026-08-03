@@ -331,7 +331,7 @@ steps:
 # that carry PAR, and interpolate each in time onto the casts that don't. This
 # fills the scalars the corrections actually need without reconstructing the
 # whole PAR field.
-  - name: PAR Light Depths
+  - name: Interpolate PAR
     parameters:
       par_var: DOWNWELLING_PAR
       ipar_level: 15.0         # Isolume level (umol/m2/s) for Z_IPAR

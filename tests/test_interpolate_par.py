@@ -1,18 +1,18 @@
-"""Tests the step 'PAR Light Depths' (src/pelagos_py/steps/processing/par_light_depths.py).
+"""Tests the step 'Interpolate PAR' (src/pelagos_py/steps/processing/interpolate_par.py).
 
 Covers the two per-profile scalars it derives from PAR — the euphotic depth
 (ZEU) and the iPAR isolume depth (Z_IPAR) — and the in-time interpolation that
 optionally fills them onto profiles without usable PAR.
 """
 
-from pelagos_py.steps.processing import par_light_depths as pld
+from pelagos_py.steps.processing import interpolate_par as ipar
 
 import numpy as np
 import pytest
 
-estimate_euphotic_depth = pld.estimate_euphotic_depth
-depth_of_ipar = pld.depth_of_ipar
-PARLightDepths = pld.PARLightDepths
+estimate_euphotic_depth = ipar.estimate_euphotic_depth
+depth_of_ipar = ipar.depth_of_ipar
+InterpolatePAR = ipar.InterpolatePAR
 
 
 # --- estimate_euphotic_depth -----------------------------------------------
@@ -59,7 +59,7 @@ def test_interpolate_scalar_fills_interior_and_leaves_ends_nan():
     prof_tsec = {1: 0.0, 2: 10.0, 3: 20.0, 4: 30.0}
     # Computed on profiles 2 and 3 only; 1 (before) and 4 (after) have no anchor.
     calc = {1: np.nan, 2: 40.0, 3: 60.0, 4: np.nan}
-    out = PARLightDepths._interpolate_scalar(calc, profiles, prof_tsec)
+    out = InterpolatePAR._interpolate_scalar(calc, profiles, prof_tsec)
     assert np.isnan(out[1])  # no extrapolation before the first computed profile
     assert out[2] == pytest.approx(40.0)
     assert out[3] == pytest.approx(60.0)
@@ -70,7 +70,7 @@ def test_interpolate_scalar_interpolates_a_gap_in_the_middle():
     profiles = np.array([1, 2, 3])
     prof_tsec = {1: 0.0, 2: 5.0, 3: 10.0}
     calc = {1: 20.0, 2: np.nan, 3: 40.0}  # midpoint in time -> midpoint in value
-    out = PARLightDepths._interpolate_scalar(calc, profiles, prof_tsec)
+    out = InterpolatePAR._interpolate_scalar(calc, profiles, prof_tsec)
     assert out[2] == pytest.approx(30.0)
 
 
@@ -78,5 +78,5 @@ def test_interpolate_scalar_needs_two_anchors():
     profiles = np.array([1, 2])
     prof_tsec = {1: 0.0, 2: 10.0}
     calc = {1: 40.0, 2: np.nan}  # only one computed profile -> nothing to fill
-    out = PARLightDepths._interpolate_scalar(calc, profiles, prof_tsec)
+    out = InterpolatePAR._interpolate_scalar(calc, profiles, prof_tsec)
     assert np.isnan(out[2])

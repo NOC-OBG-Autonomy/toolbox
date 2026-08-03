@@ -34,7 +34,7 @@ class spike_qc(BaseQC):
     Flag Number: 4 (bad)
     Variables Flagged: Any
     Checks for spiking in the data using rolling median values compared against the
-    meadian average deviation (MAD).
+    median average deviation (MAD).
 
     EXAMPLE
     -------

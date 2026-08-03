@@ -1107,6 +1107,11 @@ _CROSS_SECTION_PANELS = (
         "special": "bbp",
         "stops": palettes.SEQUENTIAL["backscatter"],
     },
+    {
+        "label": "Downwelling PAR",
+        "candidates": ("DOWNWELLING_PAR", "downwelling_par", "PAR"),
+        "stops": palettes.SEQUENTIAL["solar"],
+    },
 )
 
 #   Names tried (in order) for the cross-section's shared time and depth axes.

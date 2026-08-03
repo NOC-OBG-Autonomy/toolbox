@@ -51,6 +51,11 @@ SEQUENTIAL = {
         "#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7",
         "#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",
     ],
+    # cmocean "solar" sampled to hex (dark maroon -> bright yellow), for PAR.
+    "solar": [
+        "#331318", "#4d1c1a", "#6a2517", "#862f13", "#9c3d13", "#ad5017",
+        "#bb641c", "#c67c24", "#cf9730", "#d4b445", "#d3d55e",
+    ],
 }
 
 #: Dataset variable names -> :data:`SEQUENTIAL` palette key, so a step can pick
