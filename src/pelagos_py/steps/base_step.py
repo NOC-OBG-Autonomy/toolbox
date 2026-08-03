@@ -209,36 +209,18 @@ class BaseStep(ConfigMirrorMixin):
             pass
 
     def log(self, message, console=True):
-        """Log an info-level message with step name prefix.
-
-        Set ``console=False`` to keep the line in the log file only (useful for
-        verbose provenance detail that would clutter the console).
-        """
+        """Log an info-level message with step name prefix. ``console=False`` keeps it in the log file only."""
         self.logger.info("[%s] %s", self.name, message, extra={"console": console})
 
     def log_generating_diagnostics(self):
-        """Log that diagnostics (plot or summary) are being produced.
-
-        Distinguishes diagnostics made only to feed the Python report
-        (``_report_capture`` set by the pipeline) from ones the user asked for with
-        ``diagnostics: true``.
-        """
+        """Log that diagnostics are being produced, distinguishing report-capture runs from ``diagnostics: true``."""
         if getattr(self, "_report_capture", False):
             self.log("Generating diagnostics for report")
         else:
             self.log("Generating diagnostics")
 
     def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
-        """Wrap a countable sub-loop as a standard pipeline progress bar.
-
-        Use this instead of calling ``tqdm`` directly so every step's loop looks
-        the same, pauses the step's elapsed timer while it runs (one live bar at a
-        time), and records a one-line summary in the log file for the report to
-        reuse. Drop-in for ``tqdm(iterable, ...)``::
-
-            for profile in self.log_progress(profiles, desc="spike qc [TEMP]", unit="prof"):
-                ...
-        """
+        """Wrap a countable sub-loop as a standard pipeline progress bar; drop-in for ``tqdm(iterable, ...)``."""
         from pelagos_py.utils.console import progress_bar
 
         return progress_bar(

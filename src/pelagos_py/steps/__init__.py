@@ -39,10 +39,8 @@ from pelagos_py.steps.base_qc import REGISTERED_QC
 logger = logging.getLogger("pelagos_py.pipeline.discovery")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    logger.propagate = False  #   Avoid duplicate lines if the app configures root logging
-    # Same compact console handler the pipeline uses, so discovery (which runs at
-    # import time, before a Pipeline exists) matches the rest of the run. The
-    # long per-module scan shows a progress bar instead of a line-per-module.
+    logger.propagate = False  # Avoid duplicate lines if the app configures root logging
+    # Same console handler the pipeline uses; the module scan shows a progress bar.
     from pelagos_py.utils.console import make_console_handler
 
     logger.addHandler(make_console_handler())
@@ -66,9 +64,7 @@ def discover_steps():
 
     discovery_start = time.time()
     failed_modules = []
-    # Pre-collect the module files so the scan shows a determinate progress bar
-    # (it can take several seconds as heavy step dependencies import). Per-module
-    # timing drops to the log file; the console just advances the bar.
+    # Pre-collect module files so the scan can show a determinate progress bar.
     module_files = [
         py_file
         for py_file in base_dir.rglob("*.py")
@@ -130,12 +126,7 @@ discover_steps()
 
 
 def resolve_step_name(step_name):
-    """
-    Resolve a step name to its canonical registered key, case-insensitively.
-
-    Returns the matching key from ``STEP_CLASSES`` (preserving its original
-    casing) or ``None`` if no case-insensitive match exists.
-    """
+    """Resolve a step name to its canonical STEP_CLASSES key, case-insensitively (None if no match)."""
     if step_name in STEP_CLASSES:
         return step_name
     if not isinstance(step_name, str):
@@ -182,8 +173,7 @@ def create_step(step_config, context=None):
             f"Step '{step_name}' not recognized or missing @register_step. "
             f"Available: {list(STEP_CLASSES.keys())}"
         )
-    # Use the registered (canonical) name so downstream naming is consistent
-    # regardless of the casing the user typed in their config.
+    # Use the canonical name so downstream naming ignores the user's casing.
     step_name = canonical_name
 
     # --- Instantiate the step ---

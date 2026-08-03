@@ -332,14 +332,11 @@ class ReportPDF(FPDF):
         #   footer (which sits ~15 mm from the foot).
         self.set_auto_page_break(auto=True, margin=20)
         self.set_title(sanitize(title))
-        #   One-shot flag: skip the very next add_page() so a section can reuse a
-        #   page that was already opened for it (see run()'s contents placeholder).
+        #   One-shot: skip the next add_page() so a section can reuse an already
+        #   opened page (see run()'s contents placeholder).
         self._skip_next_add_page = False
 
     def add_page(self, *args, **kwargs) -> None:
-        #   Honour a pending one-shot skip so the first section after the contents
-        #   placeholder reuses the fresh page fpdf leaves us on, rather than adding
-        #   another and leaving a blank page behind.
         if self._skip_next_add_page:
             self._skip_next_add_page = False
             return
@@ -495,9 +492,8 @@ class ReportPDF(FPDF):
         self.ln(2)
 
     def section_heading(self, text: str) -> None:
-        #   Level-2 heading that also registers a document section (via
-        #   start_section) so it appears on the contents page and in the PDF
-        #   bookmarks with its page number. Call once per section.
+        #   Level-2 heading that also registers a document section (start_section)
+        #   so it lands on the contents page and PDF bookmarks. Once per section.
         self.start_section(text, level=0)
         self.h2(text)
 
@@ -978,9 +974,8 @@ def variable_index_rows(data: xr.Dataset) -> list:
 
 
 def contents_page(pdf: ReportPDF, outline) -> None:
-    #   Fills the reserved second page once every section's page number is known
-    #   (see insert_toc_placeholder in the step's run). Rendered from fpdf's
-    #   document outline, populated by section_heading via start_section.
+    #   Fills the reserved contents page from fpdf's document outline (populated
+    #   by section_heading via start_section) once page numbers are known.
     pdf.h2("Contents")
     pdf.set_font("Times", "", 9)
     page_w = 14  #   narrow right-hand column for the page number
@@ -1071,8 +1066,7 @@ _MAP_START = "#9fe0a0"
 #   Cross-section panels (PRES vs TIME, coloured by a variable). Each panel
 #   names the variable to colour by (first match wins, so OG1/lower-case and
 #   BBP700/BBP532 fallbacks can be listed in preference order) and pulls its
-#   colourmap stops from the shared ``palettes`` module (single source of truth,
-#   so a palette tweak there updates every plot). ``special`` flags BBP, which is
+#   colourmap stops from the shared ``palettes`` module. ``special`` flags BBP,
 #   drawn largest-on-top with smaller markers so its sharp spikes surface rather
 #   than hide behind ordinary points.
 _CROSS_SECTION_PANELS = (
@@ -1382,8 +1376,8 @@ def make_plots(
     dataset_id = data.attrs.get("dataset_id")
     dataset_label = dataset_id if dataset_id != UNKNOWN_DATASET_ID else None
 
-    #   The report bar arrives here at 10% (cross-sections). Jump it to 20% as the
-    #   image loop begins, then share the remaining 80% across the QC variables.
+    #   Bar arrives at 10%; jump to 20% as the loop begins, then split the
+    #   remaining 80% across the QC variables.
     if bar is not None:
         bar.update(10)
         per_var = 80.0 / len(qc_vars) if qc_vars else 0
@@ -1776,21 +1770,19 @@ class WriteDataReportPython(BaseStep):
             )
             pdf.title_page()
 
-            #   Reserve the second page for the contents list; it is filled in at
-            #   output time (contents_page) once every section's page number is
-            #   known. Sections written below therefore start on page 3.
-            #   allow_extra_pages lets a long contents list spill onto a further
-            #   page rather than erroring, with page numbers staying correct.
+            #   Reserve a page for the contents, filled at output time
+            #   (contents_page) once section page numbers are known; sections
+            #   below start on page 3. allow_extra_pages lets a long list spill
+            #   over without erroring.
             if self.parameters.get("show_index", True):
-                #   Start the contents on its own fresh page: insert_toc_placeholder
-                #   treats the *current* page/position as where the ToC begins, so
-                #   without this the contents render onto the tail of the title page.
+                #   Fresh page first: insert_toc_placeholder starts the ToC at the
+                #   current position, else it lands on the tail of the title page.
                 pdf.add_page()
                 pdf.insert_toc_placeholder(
                     contents_page, pages=1, allow_extra_pages=True
                 )
-                #   The placeholder's page break leaves us on a fresh page; let the
-                #   first section reuse it instead of adding another (blank) one.
+                #   Let the first section reuse the fresh page the placeholder
+                #   leaves us on rather than adding a blank one.
                 pdf._skip_next_add_page = True
 
             #   Each section is optional and defaults on. Lead with the
@@ -1799,10 +1791,8 @@ class WriteDataReportPython(BaseStep):
             #   per-step diagnostics, QC summary, plots and logs. Close with a
             #   pelagos-py credit and an index (QC flag glossary, variable index
             #   and glider information).
-            #   One bar tracks the whole report build: cross-sections take it to
-            #   10%, the start of the QC-image loop jumps it to 20%, and the loop
-            #   itself fills 20 -> 100%. The middle sections (format/config/etc.)
-            #   are quick, so the 10 -> 20 jump reads as a single step.
+            #   One bar for the whole build: cross-sections to 10%, QC-image loop
+            #   fills 20 -> 100%; the quick middle sections read as the 10 -> 20 jump.
             report_bar = progress_bar(
                 total=100, desc="", unit="%", step_name=self.name
             )

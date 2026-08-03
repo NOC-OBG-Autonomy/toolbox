@@ -86,9 +86,8 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
             ["TIME", "PROFILE_NUMBER", "DEPTH", "TEMP", "PRAC_SALINITY", self.apply_to]
         ]
 
-        # Gaps in TEMP/PRAC_SALINITY are left as NaN, so BBP is simply not derived
-        # there (and is flagged missing (9) below). Filling them is the Interpolate
-        # Data step's job — add one beforehand if gap-free BBP is wanted.
+        # Gaps in TEMP/PRAC_SALINITY are left as NaN: BBP is not derived there and is
+        # flagged missing (9) below. Add an Interpolate Data step first for gap-free BBP.
 
         # Apply the correction
         bbp_corrected = gt.flo_functions.flo_bback_total(
@@ -186,10 +185,9 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
         """
         self.filter_qc()
 
-        # Flagged samples must not drag the rolling baseline of their neighbours, so
-        # they are left out of the despike entirely. No baseline is derived for them
-        # and they are flagged missing (9) below; add an Interpolate Data step
-        # beforehand if a gap-free baseline is wanted.
+        # Flagged samples are left out of the despike so they cannot drag their
+        # neighbours' rolling baseline; they get no baseline and are flagged missing (9)
+        # below. Add an Interpolate Data step first for a gap-free baseline.
         usable = self.data[self.apply_to].where(
             self.calculation_mask([self.apply_to])
         )

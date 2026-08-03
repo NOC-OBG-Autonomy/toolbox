@@ -1,20 +1,16 @@
 """Tests the step 'Salinity Adjustment' (src/pelagos_py/steps/processing/salinity.py).
 
-Focused on QC handling: flagged samples must not inform the optimal-lag estimate or
-anchor the interpolants the two corrections are built from, while still receiving the
-corrections themselves.
+Focused on QC handling: flagged samples must not inform the estimate or anchor the
+interpolants, while still receiving the corrections themselves.
 """
 
-#   Test module import
 from pelagos_py.steps.processing.salinity import AdjustSalinity
 
 import numpy as np
 import pytest
 import xarray as xr
 
-#: Samples per profile and sample spacing. correct_ct_lag only processes profiles
-#: spanning over an hour with more than 3 * filter_window_size samples, so the
-#: profiles here are sized to qualify.
+#: Sized so profiles span over an hour with > 3 * filter_window_size samples, which correct_ct_lag requires.
 SAMPLES_PER_PROFILE = 1200
 SAMPLE_SECONDS = 4.0
 FILTER_WINDOW = 21
@@ -25,7 +21,7 @@ GOOD = np.r_[0:400, 460:SAMPLES_PER_PROFILE]
 
 
 def make_context(bad_block=None, n_profiles=2):
-    """Two smooth CTD profiles, optionally with a wild, QC-flagged TEMP stretch."""
+    # Two smooth CTD profiles, optionally with a wild, QC-flagged TEMP stretch.
     t0 = np.datetime64("2024-01-01T00:00:00")
     times, prof, temp, cndc, pres = [], [], [], [], []
     for p in range(n_profiles):
@@ -68,8 +64,6 @@ def run_step(context, parameters=None):
 
 
 def test_flagged_stretch_does_not_affect_its_neighbours_correction():
-    """The corrected temperature of every good sample must be identical to a run
-    where the bad stretch was never there."""
     clean = run_step(make_context())["TEMP"].values
     flagged = run_step(make_context(bad_block=BAD_BLOCK))["TEMP"].values
 
@@ -77,15 +71,13 @@ def test_flagged_stretch_does_not_affect_its_neighbours_correction():
 
 
 def test_flagged_samples_are_still_corrected():
-    """Excluded from the calculation does not mean excluded from the correction."""
     flagged = run_step(make_context(bad_block=BAD_BLOCK))["TEMP"].values
 
     assert np.isfinite(flagged[BAD_BLOCK]).all()
 
 
 def test_without_the_filter_the_flagged_stretch_poisons_its_neighbours():
-    """Counterpart: an empty calculation_flag_filter lets the bad stretch anchor the
-    interpolants again, which is exactly what the default prevents above."""
+    # Counterpart: an empty calculation_flag_filter lets the bad stretch anchor the interpolants, which the default prevents above.
     clean = run_step(make_context())["TEMP"].values
     unmasked = run_step(
         make_context(bad_block=BAD_BLOCK),
@@ -97,7 +89,6 @@ def test_without_the_filter_the_flagged_stretch_poisons_its_neighbours():
 
 
 def test_clean_data_is_unaffected_by_the_filter():
-    """With nothing flagged, the default filter must change no result at all."""
     default = run_step(make_context())["TEMP"].values
     disabled = run_step(
         make_context(), {"qc_handling_settings": {"calculation_flag_filter": []}}

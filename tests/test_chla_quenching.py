@@ -1,11 +1,5 @@
-"""Tests the step 'CHLA Quenching' (src/pelagos_py/steps/processing/chla_quenching.py).
+"""Tests the step 'CHLA Quenching' (src/pelagos_py/steps/processing/chla_quenching.py)."""
 
-Covers the newly implemented backscatter- and euphotic-depth-based NPQ methods
-and their helpers. The per-profile correction methods are exercised directly
-(the solar-elevation lookup is stubbed) so no real data or pvlib call is needed.
-"""
-
-#   Test module import
 from pelagos_py.steps.processing import chla_quenching
 
 import numpy as np
@@ -19,18 +13,9 @@ def make_profile(
     chlf, depth, bbp=None, ipar=None, mld=None, zeu=None, z_ipar=None,
     profile_number=101.0, calc_mask=None,
 ):
-    """Single-profile dataset in the step's positive-down DEPTH convention.
-
-    ``run()`` adds a ``*__FOR_CALC`` copy of each input (the same values with
-    QC-flagged samples NaN'd out) that the methods derive their quantities from, so
-    the profiles here carry them too. ``calc_mask`` is a boolean array marking the
-    samples usable for calculation; by default every sample is usable, so the calc
-    copies match the raw inputs.
-
-    The euphotic depth (``ZEU``) and iPAR isolume depth (``Z_IPAR``) are now
-    per-profile scalars supplied by the 'Interpolate PAR' step rather than derived
-    from PAR here, so they are broadcast across the profile (``NaN`` when absent).
-    """
+    # Single-profile dataset in positive-down DEPTH convention. calc_mask marks
+    # samples usable for calculation (default all), driving the *__FOR_CALC copies
+    # run() would add. ZEU/Z_IPAR are per-profile scalars broadcast across the profile.
     n = len(chlf)
     data = {
         "PROFILE_NUMBER": ("N_MEASUREMENTS", np.full(n, profile_number)),
@@ -58,7 +43,6 @@ def make_profile(
 
 
 def make_step(sun_angle=40.0, hybrid=True):
-    """Bare step instance with the sun-elevation lookup stubbed to ``sun_angle``."""
     step = Quenching.__new__(Quenching)
     step.apply_to = "CHLA"
     step.bbp_var = "BBP700"
@@ -84,16 +68,12 @@ def test_biermann_lifts_shallow_to_max_below_zeu():
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
-    # Reference is the max fluorescence within the euphotic zone (1.0 at 20 m);
-    # everything shallower than that quenching depth is set to it, deeper is
-    # untouched.
+    # Reference is the max fluorescence in the euphotic zone (1.0 at 20 m); shallower is set to it, deeper untouched.
     assert np.all(out[:5] == pytest.approx(1.0))
     assert out[5:].tolist() == chlf[5:].tolist()
 
 
 def test_biermann_flagged_spike_cannot_set_the_reference_but_is_still_corrected():
-    """A flagged sample must not become the reference maximum, yet must still be
-    lifted to it like any other shallow sample."""
     z_pos = np.array([2, 6, 10, 15, 20, 30, 45, 60, 80.0])
     chlf = np.array([0.4, 9.9, 0.7, 0.9, 1.0, 0.8, 0.4, 0.2, 0.1])
     ipar = 200 * np.exp(-0.12 * z_pos)  # Zeu ~ 38 m
@@ -105,8 +85,7 @@ def test_biermann_flagged_spike_cannot_set_the_reference_but_is_still_corrected(
 
     out = make_step().apply_biermann2015_quenching_correction(prof)
 
-    # The reference is the largest *usable* value in the euphotic zone (1.0 at
-    # 20 m), not the flagged 9.9 spike.
+    # The reference is the largest usable value in the euphotic zone (1.0 at 20 m), not the flagged 9.9 spike.
     assert np.all(out[:5] == pytest.approx(1.0))
     # ...including the flagged sample itself, which is corrected down to it.
     assert out[1] == pytest.approx(1.0)
@@ -114,8 +93,7 @@ def test_biermann_flagged_spike_cannot_set_the_reference_but_is_still_corrected(
 
 
 def test_biermann_unflagged_spike_does_set_the_reference():
-    """Counterpart to the test above: with nothing flagged the spike takes over,
-    which is what the calculation mask is preventing."""
+    # Counterpart to the flagged case: with nothing flagged the spike takes over.
     z_pos = np.array([2, 6, 10, 15, 20, 30, 45, 60, 80.0])
     chlf = np.array([0.4, 9.9, 0.7, 0.9, 1.0, 0.8, 0.4, 0.2, 0.1])
     ipar = 200 * np.exp(-0.12 * z_pos)
@@ -152,15 +130,13 @@ def test_xing2018_resets_npq_layer_to_bbp_times_rmax(hybrid):
 
     out = make_step(hybrid=hybrid).apply_xing2018_quenching_correction(prof)
 
-    # Deep mixing, so both hybrid settings take the Xing 2018 branch. Within the
-    # NPQ layer bbp is constant and R_max hits the 1.0 peak, so the suppressed
-    # near-surface points are lifted to 1.0; deeper points unchanged.
+    # Deep mixing -> both hybrid settings take the Xing branch; bbp constant and R_max hits 1.0, so surface lifts to 1.0.
     assert np.all(out[:5] == pytest.approx(1.0))
     assert out[5:].tolist() == chlf[5:].tolist()
 
 
 def _shallow_mixing_profile():
-    """Shallow mixing: iPAR=15 deep (~80 m) with a shallow MLD of 10 m."""
+    # Shallow mixing: iPAR=15 deep (~80 m) with a shallow MLD of 10 m.
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 800 * np.exp(-0.05 * z_pos)  # iPAR=15 ~ 79.5 m, below MLD=10 -> shallow
     return chlf, make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, mld=10.0, z_ipar=79.5)
@@ -177,19 +153,15 @@ def test_xing2018_hybrid_shallow_mixing_runs_and_never_reduces():
 
 
 def test_xing2018_hybrid_off_uses_xing_branch_when_mixing_is_shallow():
-    """With hybrid off, a shallow-mixing profile still gets the Xing 2018 layer."""
     chlf, prof = _shallow_mixing_profile()
 
     plain = make_step(hybrid=False).apply_xing2018_quenching_correction(prof)
     hybrid = make_step(hybrid=True).apply_xing2018_quenching_correction(prof)
 
-    # Xing's NPQ layer is 0 to min(MLD, iPAR=15 depth) = the 10 m MLD, over which
-    # bbp is constant, so the layer is flattened to its own deepest (least
-    # quenched) value and nothing below the MLD moves.
+    # Xing's NPQ layer is 0 to the 10 m MLD, over which bbp is constant, so it flattens to its deepest value; below is untouched.
     assert plain[:3] == pytest.approx(0.7)
     assert plain[3:].tolist() == chlf[3:].tolist()
-    # The hybrid instead de-quenches below the MLD, so the two disagree there -
-    # which is the whole point of the parameter.
+    # The hybrid de-quenches below the MLD, so the two disagree there.
     assert not np.allclose(plain, hybrid)
 
 
@@ -215,8 +187,7 @@ def test_hemsley_replaces_euphotic_zone_with_bbp_estimate():
     step._hemsley_regression = {"slope": 100.0, "intercept": 0.1}
     out = step.apply_hemsley2015_quenching_correction(prof)
 
-    # Over the euphotic zone (z <= ~38 m) fluorescence becomes m*bbp + c;
-    # deeper points are untouched.
+    # Over the euphotic zone (z <= ~38 m) fluorescence becomes m*bbp + c; deeper untouched.
     assert out[:6] == pytest.approx(100.0 * bbp[:6] + 0.1)
     assert out[6:].tolist() == chlf[6:].tolist()
 
@@ -256,15 +227,13 @@ def test_thomalla_corrects_above_quenching_depth_and_only_raises():
     prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, zeu=_ZEU_38)
 
     step = make_step()
-    # Night reference: constant fl:bbp ratio so corrected = 500*bbp (=1.0 at
-    # surface), and a mean night fluorescence that is unquenched near surface.
+    # Night reference: constant fl:bbp ratio so corrected = 500*bbp (=1.0 at surface), night fl unquenched near surface.
     step._night_refs = [{"z": z_pos, "fl": 500.0 * bbp, "ratio": np.full(z_pos.size, 500.0)}]
     step._thomalla_day_night = {101: 0}
 
     out = step.apply_thomalla2017_quenching_correction(prof)
 
-    # QD resolves to 15 m; surface points are lifted to 500*bbp (1.0) where that
-    # exceeds the quenched value, and everything deeper is left unchanged.
+    # QD resolves to 15 m; surface lifts to 500*bbp (1.0) where it exceeds the quenched value, deeper unchanged.
     assert out[:4] == pytest.approx(1.0)
     assert out[4:].tolist() == chlf[4:].tolist()
 
@@ -284,8 +253,7 @@ def test_thomalla_unmapped_profile_returns_unchanged():
 
 def test_sackmann_resets_layer_to_bbp_times_max_ratio_in_mld():
     z_pos, chlf, bbp = _bbp_profile()
-    # Max fl:bbp within the MLD (25 m) is at 20 m (0.4/2e-3 = 500); the layer
-    # from the surface to there is reset to bbp*500 (=1.0), deeper is untouched.
+    # Max fl:bbp within the MLD (25 m) is at 20 m (0.4/2e-3 = 500); surface-to-there resets to bbp*500 (=1.0), deeper untouched.
     prof = make_profile(chlf, z_pos, bbp=bbp, mld=25.0)
 
     out = make_step().apply_sackmann2008_quenching_correction(prof)
@@ -297,8 +265,7 @@ def test_sackmann_resets_layer_to_bbp_times_max_ratio_in_mld():
 def test_swart_uses_euphotic_zone_window():
     z_pos, chlf, bbp = _bbp_profile()
     ipar = 200 * np.exp(-0.12 * z_pos)  # Kd=0.12 -> Zeu ~ 38 m
-    # Zeu (~38 m) reaches the 30 m point, whose fl:bbp (0.8/1.5e-3 = 533) is the
-    # window max; the surface-to-30 m layer is reset to bbp*533, deeper untouched.
+    # Zeu (~38 m) reaches the 30 m point, whose fl:bbp (0.8/1.5e-3 = 533) is the window max; surface-to-30 m resets to bbp*533, deeper untouched.
     prof = make_profile(chlf, z_pos, bbp=bbp, ipar=ipar, zeu=_ZEU_38)
 
     out = make_step().apply_swart2015_quenching_correction(prof)
@@ -336,7 +303,6 @@ _PAR = np.array([100, 50, 25, 12, np.nan, np.nan, np.nan, np.nan, 200, 100, 50, 
 
 
 def _disable_step(scalar_name=None, scalar_values=None):
-    """Bare step whose ``self.data`` holds the three-cast fixture above."""
     step = Quenching.__new__(Quenching)
     step.par_var = "DOWNWELLING_PAR"
     step.method = "biermann2015"

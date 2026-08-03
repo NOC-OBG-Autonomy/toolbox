@@ -75,10 +75,8 @@ def _save_open_figures(
     can still be shown interactively afterwards (used for steps the user
     explicitly enabled diagnostics on).
 
-    ``step_index`` is the step's position in the pipeline. It is part of the
-    filename because a config may run the same step more than once (several
-    'Apply QC' steps, say); without it every instance would write - and read
-    back - the same paths, so each would show the last one's figures.
+    ``step_index`` (the step's pipeline position) is in the filename so repeated
+    step names (e.g. several 'Apply QC' steps) don't overwrite each other.
     """
     safe = f"{step_index:02d}_" + step_name.replace(os.sep, "_").replace(" ", "_")
     for num in plt.get_fignums():
@@ -116,8 +114,7 @@ def capture_figures(
     step_name : str
         Name of the step producing the figures (used to name the files).
     step_index : int
-        The step's position in the pipeline, used to keep the filenames of
-        repeated step names apart.
+        The step's pipeline position, used to keep repeated step names apart.
     images : list
         List that captured image paths are appended to, in the order produced.
     suppress_text : bool, optional

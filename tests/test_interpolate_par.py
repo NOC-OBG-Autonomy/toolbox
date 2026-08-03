@@ -1,9 +1,4 @@
-"""Tests the step 'Interpolate PAR' (src/pelagos_py/steps/processing/interpolate_par.py).
-
-Covers the two per-profile scalars it derives from PAR — the euphotic depth
-(ZEU) and the iPAR isolume depth (Z_IPAR) — and the in-time interpolation that
-optionally fills them onto profiles without usable PAR.
-"""
+"""Tests the step 'Interpolate PAR' (src/pelagos_py/steps/processing/interpolate_par.py)."""
 
 from pelagos_py.steps.processing import interpolate_par as ipar
 
@@ -19,7 +14,6 @@ InterpolatePAR = ipar.InterpolatePAR
 
 
 def test_estimate_euphotic_depth_recovers_1pct_level():
-    """A clean exponential PAR profile yields Zeu = ln(100) / Kd."""
     z = np.arange(0, 60, 2.0)
     par = 100 * np.exp(-0.1 * z)  # Kd = 0.1 -> Zeu = 46.05 m
     assert estimate_euphotic_depth(par, z) == pytest.approx(46.05, abs=0.1)

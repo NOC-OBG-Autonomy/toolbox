@@ -101,10 +101,8 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         # Convert xarray Dataset to Polars DataFrame for efficient numerical processing
         # Extract only the variables needed for GSW calculations
         base_columns = ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
-        # A derived variable an earlier Derive CTD step already added is a valid
-        # input here, so pull it in too - otherwise splitting the derivations
-        # across two steps (e.g. to correct PRAC_SALINITY in between) would make
-        # the second step's inputs look missing.
+        # Pull in any already-derived variable too, so derivations can be split across
+        # two Derive CTD steps (e.g. to correct PRAC_SALINITY in between).
         derived_columns = [
             var
             for var in self.provided_variables

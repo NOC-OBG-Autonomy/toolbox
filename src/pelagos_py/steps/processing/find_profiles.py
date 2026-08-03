@@ -61,17 +61,9 @@ PHASE_NAMES = {
 # ---------------------------------------------------------------------------
 
 def _ols_slope(x, y):
-    """Closed-form degree-1 slope, in place of ``np.polyfit(x, y, 1)``.
-
-    ``np.polyfit`` routes through ``numpy.linalg.lstsq``'s SVD-based solver,
-    which has been observed to hard-crash the process (native abort, no
-    Python exception) on some Windows/OpenBLAS builds when given degenerate
-    input (e.g. near-duplicate x-values). A plain OLS formula avoids that
-    codepath entirely for what is only ever a 1D slope.
-
-    Non-finite pairs are dropped rather than propagated, so a single NaN cannot
-    turn the whole fit into NaN.
-    """
+    # Closed-form 1D slope instead of np.polyfit, whose SVD solver can hard-crash
+    # some Windows/OpenBLAS builds on degenerate input. Non-finite pairs are dropped
+    # so a single NaN cannot turn the whole fit into NaN.
     finite = np.isfinite(x) & np.isfinite(y)
     x, y = x[finite], y[finite]
     if x.size < 2:
@@ -591,10 +583,6 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
     }
 
     def run(self):
-        """Samples whose flags fall in ``calculation_flag_filter`` (by default
-        probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) take
-        no part in detecting the profiles, so a bad pressure reading cannot invent an
-        inflection. Every sample is still assigned to a profile."""
         self.log("Attempting to designate profile numbers, cycles, directions, and phases")
         self.check_data()
         self.filter_qc()
@@ -629,9 +617,8 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         cols_to_extract = ["TIME", depth_col]
         df_raw = self.data[cols_to_extract].to_dataframe().reset_index()
 
-        # Flagged samples must not shape the profile detection, which smooths,
-        # differentiates and peak-finds along depth. Every sample is still labelled:
-        # the results are merged back on TIME, which is untouched here.
+        # Flagged samples must not shape the depth smoothing/peak-finding, but every
+        # sample is still labelled: results are merged back on TIME, untouched here.
         df_raw.loc[~self.calculation_mask(["TIME", depth_col]), depth_col] = np.nan
 
         df_final = find_profiles(
@@ -700,26 +687,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         return self.context
 
     def generate_diagnostics(self, mapped_df, depth_col):
-        """
-        Plot the derived phase classification and profile/cycle numbering.
-
-        Called automatically at the end of :meth:`run` when ``diagnostics`` is
-        enabled. Produces a two-panel figure for visually checking that profiles
-        were identified correctly.
-
-        The upper panel shows the depth (or pressure) record against time, with every
-        measurement coloured by its scientific phase — ascent, descent, surfacing,
-        parking, propelled, inflection and transition (see the class description for
-        the full phase definitions). The legend reports the number of points assigned
-        to each phase. This makes it easy to confirm that each turn is bracketed by a
-        single inflection point at its apex, with the surrounding turn marked as
-        transition and the near-surface portions marked as surfacing.
-
-        The lower panel shows the derived ``PROFILE_NUMBER`` (each ascent/descent core,
-        extended to include the adjacent transition/inflection on either side) and the
-        ``CYCLE`` number against time, so the continuity of the numbering can be
-        checked at a glance.
-        """
+        # Two panels: depth coloured by scientific phase, and profile/cycle numbering.
         matplotlib.use("tkagg")
         fig, axes = fig_spec.new_fig(nrows=2, sharex=True, height_ratios=(3, 1))
         ax1, ax2 = axes[0][0], axes[1][0]

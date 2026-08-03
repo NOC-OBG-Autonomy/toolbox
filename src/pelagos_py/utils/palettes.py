@@ -14,17 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared colour palettes for pelagos_py plots.
+"""Shared per-variable colour palettes for pelagos_py plots.
 
-Single source of truth for the per-variable colourmaps used across the toolbox
-(report cross-sections, step diagnostics, ...). Change a palette here and every
-plot that pulls from it updates. Each entry is a list of hex stops ordered low
-value -> high value (not reversed); ``get_cmap`` builds a matplotlib
+Single source of truth for the colourmaps used across the toolbox. Each entry is
+a list of hex stops ordered low -> high value; ``get_cmap`` builds a matplotlib
 ``LinearSegmentedColormap`` from one.
 """
 
-#: Per-variable sequential palettes, keyed by lower-case variable name. Stops run
-#: low value -> high value.
+# Per-variable sequential palettes, keyed by lower-case name; stops low -> high.
 SEQUENTIAL = {
     "temperature": [
         "#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd",
@@ -58,8 +55,7 @@ SEQUENTIAL = {
     ],
 }
 
-#: Dataset variable names -> :data:`SEQUENTIAL` palette key, so a step can pick
-#: the right palette straight from the variable it is colouring.
+# Dataset variable names -> SEQUENTIAL palette key.
 VARIABLE_PALETTES = {
     "TEMP": "temperature",
     "CONS_TEMP": "temperature",
@@ -77,17 +73,7 @@ VARIABLE_PALETTES = {
 
 
 def get_cmap(name):
-    """Build a matplotlib colormap from a named :data:`SEQUENTIAL` palette.
-
-    Parameters
-    ----------
-    name : str
-        Palette key (case-insensitive), e.g. ``"chlorophyll"``.
-
-    Returns
-    -------
-    matplotlib.colors.LinearSegmentedColormap
-    """
+    """Build a matplotlib colormap from a named SEQUENTIAL palette (case-insensitive)."""
     from matplotlib.colors import LinearSegmentedColormap
 
     key = name.lower()
@@ -99,19 +85,8 @@ def get_cmap(name):
 
 
 def cmap_for_variable(variable, default=None):
-    """Return the colormap for a dataset variable name, or ``default``.
-
-    Looks the variable up in :data:`VARIABLE_PALETTES` (case-insensitive) and
-    builds the matching palette; variables with no mapping fall back to
-    ``default`` (e.g. a matplotlib colormap name).
-
-    Parameters
-    ----------
-    variable : str
-        Dataset variable name, e.g. ``"DENSITY"`` or ``"CHLA_ADJUSTED"``.
-    default : optional
-        Returned when the variable has no palette. Default ``None``.
-    """
+    """Colormap for a dataset variable name (case-insensitive), or ``default``
+    when the variable has no mapping in VARIABLE_PALETTES."""
     key = VARIABLE_PALETTES.get(str(variable).upper())
     if key is None:
         return default

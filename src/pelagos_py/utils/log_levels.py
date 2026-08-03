@@ -59,8 +59,8 @@ class ColorFormatter(logging.Formatter):
     _YELLOW = "\033[33m"
     _GREY = "\033[90m"
 
-    #: Colours a record may request explicitly via ``extra={"color": ...}`` (e.g.
-    #: a step greying its own verbose output). Unknown names leave it uncoloured.
+    # Colours a record may request via ``extra={"color": ...}``; unknown names
+    # leave it uncoloured.
     _NAMED_COLORS = {"grey": _GREY, "gray": _GREY, "red": _RED, "yellow": _YELLOW}
 
     def __init__(self, *args, stream=None, **kwargs):
@@ -70,10 +70,8 @@ class ColorFormatter(logging.Formatter):
     def _color_for(self, record):
         """Return the ANSI colour for a record, or None to leave it uncoloured.
 
-        An explicit ``color`` on the record (set via
-        ``logger.info(..., extra={"color": "grey"})``) wins, so a step can mark
-        its own output; otherwise colour is chosen by level (ERROR/STOP red,
-        WARNING yellow).
+        An explicit ``color`` on the record wins; otherwise colour is chosen by
+        level (ERROR/STOP red, WARNING yellow).
         """
         requested = getattr(record, "color", None)
         if requested:

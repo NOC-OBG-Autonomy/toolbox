@@ -1,6 +1,5 @@
 """Tests the steps 'BBP from Beta' and 'Isolate BBP Spikes' (src/pelagos_py/steps/processing/bbp.py)."""
 
-#   Test module import
 from pelagos_py.steps.processing import bbp
 
 import numpy as np
@@ -12,7 +11,7 @@ IsolateBBPSpikes = bbp.IsolateBBPSpikes
 
 
 def make_beta_context(temp=None, depth=None, flags=None, n=8):
-    """Minimal context for BBP from Beta, with all inputs good unless overridden."""
+    # Minimal context for BBP from Beta, all inputs good unless overridden.
     ones = np.ones(n)
     data = {
         "TIME": (
@@ -46,10 +45,7 @@ def make_beta_step(context, parameters=None):
 
 
 def test_gaps_in_inputs_are_left_alone_and_bbp_is_not_derived_there():
-    """The step must not gap-fill its inputs: filling is Interpolate Data's job.
-
-    A NaN TEMP simply yields no BBP at that sample, flagged missing (9).
-    """
+    # The step must not gap-fill its inputs (that is Interpolate Data's job): a NaN TEMP yields no BBP there, flagged missing (9).
     ctx = make_beta_context(temp=[10, 10, np.nan, 10, 10, 10, 10, 10])
     out = make_beta_step(ctx).run()["data"]
 
@@ -62,7 +58,6 @@ def test_gaps_in_inputs_are_left_alone_and_bbp_is_not_derived_there():
 
 
 def test_depth_is_never_modified():
-    """DEPTH is not an input to the BBP formula, so the step must leave it untouched."""
     depth = [1, 2, np.nan, 4, 5, 6, 7, 8]
     ctx = make_beta_context(depth=depth)
     before = ctx["data"]["DEPTH"].values.copy()
@@ -103,14 +98,8 @@ def make_spikes_step(context, window_size=5):
 
 
 def _bad_stretch_with_one_good_sample():
-    """A bad stretch (e.g. biofouling) with one good reading surviving inside it.
-
-    This is the case a rolling median is *not* robust to: the lone good sample's
-    window is mostly bad, so the median reports the bad level for it. An isolated
-    outlier, by contrast, is already rejected by the median with or without a mask.
-
-    Returns (values, flags, good_idx).
-    """
+    # A bad stretch (e.g. biofouling) with one good reading inside it - the case a rolling median is not robust to.
+    # Returns (values, flags, good_idx).
     n = 40
     values = np.full(n, 99.0)
     values[:15] = 1.0
@@ -124,8 +113,6 @@ def _bad_stretch_with_one_good_sample():
 
 
 def test_flagged_stretch_cannot_drag_a_good_samples_baseline():
-    """A good reading inside a flagged bad stretch must get its own baseline, not
-    the bad stretch's."""
     values, flags, good = _bad_stretch_with_one_good_sample()
 
     out = make_spikes_step(make_spikes_context(values, flags)).run()["data"]
@@ -139,8 +126,7 @@ def test_flagged_stretch_cannot_drag_a_good_samples_baseline():
 
 
 def test_unflagged_stretch_does_drag_the_baseline():
-    """Counterpart: unflagged, the bad stretch takes over the good sample's rolling
-    median entirely - which is what the calculation mask prevents above."""
+    # Counterpart: unflagged, the bad stretch takes over the good sample's rolling median - what the calculation mask prevents above.
     values, _, good = _bad_stretch_with_one_good_sample()
 
     out = make_spikes_step(make_spikes_context(values)).run()["data"]

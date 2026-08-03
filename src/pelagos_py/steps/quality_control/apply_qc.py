@@ -176,8 +176,7 @@ class ApplyQC(BaseStep):
             [var for var in data.data_vars if var.endswith("_QC")]
         ) - set(test_qc_outputs_cols)
         if any(other_existing_qc):
-            # File-only: this set can be 20+ columns and repeats every QC step, so
-            # it stays out of the console and is recorded in the log file instead.
+            # File-only: this set can be large and repeats every QC step.
             self.logger.info(
                 "[%s] %s pre-existing QC column(s) left untouched by this step: %s",
                 self.name,

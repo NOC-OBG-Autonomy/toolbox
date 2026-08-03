@@ -2,12 +2,9 @@
 
 Covers ``calculation_mask``, which marks the samples a step may compute from.
 Unlike ``filter_qc`` it never touches the dataset: excluded samples still receive
-the step's correction, they just do not inform it. The steps that use it
-(Deep Correction, Mixed Layer Depth, CHLA Quenching) exercise it end-to-end in
-their own test modules.
+the step's correction, they just do not inform it.
 """
 
-#   Test module import
 from pelagos_py.utils import qc_handling
 
 import numpy as np
@@ -18,11 +15,7 @@ DEFAULT_CALCULATION_FLAGS = qc_handling.DEFAULT_CALCULATION_FLAGS
 
 
 def make_step(flags=None, calculation_flag_filter=None):
-    """Bare mixin instance holding a dataset with the given per-variable flags.
-
-    ``flags`` maps a variable name to its QC flags; the variable's values are
-    irrelevant here, only the flags gate the mask.
-    """
+    # Bare mixin instance holding a dataset with the given per-variable flags (values are irrelevant, only flags gate the mask).
     flags = flags or {}
     n = len(next(iter(flags.values()))) if flags else 0
     data = {}
@@ -43,7 +36,6 @@ def make_step(flags=None, calculation_flag_filter=None):
 
 
 def test_defaults_exclude_probably_bad_bad_and_missing():
-    """3, 4 and 9 are excluded by default; every other flag is usable."""
     step = make_step({"CHLA": [0, 1, 2, 3, 4, 5, 8, 9]})
     assert step.calculation_mask(["CHLA"]).tolist() == [
         True, True, True, False, False, True, True, False
@@ -51,7 +43,6 @@ def test_defaults_exclude_probably_bad_bad_and_missing():
 
 
 def test_a_sample_needs_every_listed_variable_to_be_usable():
-    """The mask is the AND across variables, so one bad input excludes the sample."""
     step = make_step({"CHLA": [1, 1, 4, 1], "DEPTH": [1, 4, 1, 1]})
     assert step.calculation_mask(["CHLA", "DEPTH"]).tolist() == [
         True, False, False, True
@@ -61,25 +52,21 @@ def test_a_sample_needs_every_listed_variable_to_be_usable():
 
 
 def test_variable_without_qc_does_not_gate():
-    """A variable with no _QC companion cannot exclude anything."""
     step = make_step({"CHLA": [1, 4, 1], "BBP700": None})
     assert step.calculation_mask(["CHLA", "BBP700"]).tolist() == [True, False, True]
 
 
 def test_empty_filter_makes_every_sample_usable():
-    """An empty calculation_flag_filter opts out of the exclusion entirely."""
     step = make_step({"CHLA": [3, 4, 9, 1]}, calculation_flag_filter=[])
     assert step.calculation_mask(["CHLA"]).all()
 
 
 def test_filter_is_configurable():
-    """Only the listed flags are excluded, so a 3 stays usable when not listed."""
     step = make_step({"CHLA": [3, 4, 9, 1]}, calculation_flag_filter=[4, 9])
     assert step.calculation_mask(["CHLA"]).tolist() == [True, False, False, True]
 
 
 def test_mask_does_not_mutate_the_data():
-    """calculation_mask is read-only: excluded samples survive for correction."""
     step = make_step({"CHLA": [1, 4, 1]})
     before = step.data["CHLA"].values.copy()
     step.calculation_mask(["CHLA"])

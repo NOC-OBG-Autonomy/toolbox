@@ -16,20 +16,10 @@
 
 """Console presentation for pipeline runs.
 
-The console mirrors the shape of the log file and report: every line is
-``time  step-name  detail``. The only difference is colour (info grey, warnings
-yellow, errors/STOP red) and that countable loops are shown as a live progress
-bar rather than a static line. The verbose ``LEVEL - logger`` fields stay in the
-log *file* only.
-
-Building blocks:
-
-* :class:`ConsoleFormatter` / :func:`make_console_handler` — the console handler.
-  It reshapes each record to ``time  name  message`` (dropping the redundant
-  ``[Step Name]`` tag and the ``LEVEL - logger`` noise), colours by severity, and
-  writes through :func:`tqdm.write` so log lines and a live bar coexist.
-* :func:`progress_bar` — the uniform progress-bar style used for step-internal
-  loops and pipeline start-up.
+Every line is ``time  step-name  detail`` (colour by severity: warnings yellow,
+errors/STOP red), with countable loops shown as a live progress bar. The console
+handler reshapes each record and writes through :func:`tqdm.write` so log lines
+and a live bar coexist; :func:`progress_bar` is the uniform bar style.
 """
 
 import logging
@@ -45,30 +35,23 @@ _RESET = "\033[0m"
 _RED = "\033[31m"
 _YELLOW = "\033[33m"
 
-#: Width the step/process name is padded to, so the detail columns line up.
+# Width the step/process name is padded to, so the detail columns line up.
 _NAME_WIDTH = 20
 
-#: Uniform tqdm bar for every countable loop (step internals + start-up). Kept in
-#: one place so progress looks the same everywhere. ``{desc}`` already carries the
-#: ``time  name`` prefix (see :func:`_bar_prefix`).
+# Uniform tqdm bar for every countable loop; ``{desc}`` carries the time/name prefix.
 BAR_FORMAT = "{desc} {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]"
 
-#: Leading ``[Step Name] `` tag steps prepend via ``BaseStep.log``; the name is
-#: lifted into its own column so the tag itself is dropped from the message.
+# Leading ``[Step Name] `` tag steps prepend via ``BaseStep.log``; lifted into its own column.
 _TAG = re.compile(r"^\[([^\]]*)\]\s*")
 
 
 def _console_enabled(stream=None):
-    """Whether live console decoration (colour, in-place bars) is safe here.
-
-    False when output is redirected to a file/pipe or colour is disabled, in
-    which case tqdm auto-disables and colour is skipped.
-    """
+    # False when output is redirected or colour is disabled (tqdm/colour off).
     return _supports_color(stream if stream is not None else sys.stderr)
 
 
 def _display_name(record):
-    """Short step/process name for a record that carries no ``[...]`` tag."""
+    # Short step/process name for a record with no ``[...]`` tag.
     name = record.name
     for prefix in ("pelagos_py.pipeline.step.", "pelagos_py.pipeline.qc."):
         if name.startswith(prefix):
@@ -81,7 +64,7 @@ def _display_name(record):
 
 
 def _bar_prefix(step_name):
-    """The ``time  name`` prefix a progress bar shares with log lines."""
+    # The ``time  name`` prefix a progress bar shares with log lines.
     stamp = time.strftime("%H:%M:%S")
     if step_name:
         return f"{stamp}  {step_name:<{_NAME_WIDTH}}  "
@@ -91,9 +74,8 @@ def _bar_prefix(step_name):
 class ConsoleFormatter(logging.Formatter):
     """Reshape a record to ``time  name  message`` and colour it by severity.
 
-    The step/process name is taken from the record's ``[...]`` tag when present,
-    otherwise derived from the logger name. Colour: INFO grey, WARNING yellow,
-    ERROR/STOP red. Pass ``extra={"raw": True}`` to emit a line verbatim.
+    Name comes from the ``[...]`` tag when present, else the logger name. WARNING
+    yellow, ERROR/STOP red. Pass ``extra={"raw": True}`` to emit a line verbatim.
     """
 
     def __init__(self, *args, stream=None, **kwargs):
@@ -117,7 +99,7 @@ class ConsoleFormatter(logging.Formatter):
 
         if not self._use_color:
             return line
-        # Info stays the terminal's default (white); only warnings/errors colour.
+        # Info stays the terminal default; only warnings/errors colour.
         if record.levelno >= logging.ERROR:
             return f"{_RED}{line}{_RESET}"
         if record.levelno >= logging.WARNING:
@@ -126,11 +108,8 @@ class ConsoleFormatter(logging.Formatter):
 
 
 class _TqdmHandler(logging.StreamHandler):
-    """Stream handler that emits through :func:`tqdm.write`.
-
-    Routing log output via ``tqdm.write`` keeps records from corrupting an active
-    progress bar (the bar is cleared, the line is written, the bar is redrawn).
-    """
+    """Stream handler that emits through :func:`tqdm.write` so records don't
+    corrupt an active progress bar."""
 
     def emit(self, record):
         try:
@@ -140,11 +119,8 @@ class _TqdmHandler(logging.StreamHandler):
 
 
 class _ConsoleOnlyFilter(logging.Filter):
-    """Drop records tagged ``extra={"console": False}``.
-
-    Lets noisy book-keeping (per-module discovery, per-step assembly, ``Executing:``)
-    reach the log file while the console shows the progress bars instead.
-    """
+    """Drop records tagged ``extra={"console": False}`` so noisy book-keeping
+    reaches the log file but not the console."""
 
     def filter(self, record):
         return getattr(record, "console", True)
@@ -160,13 +136,8 @@ def make_console_handler(level=logging.INFO):
 
 
 class _PhaseBar(tqdm):
-    """A countable loop shown as a bar, with a matching one-line file summary.
-
-    The bar's ``desc`` carries the same ``time  name`` prefix as the log lines, so
-    a live loop reads like the rest of the console. On close it logs a summary to
-    the file only (the console already showed the bar), so the file and report
-    record the same phases.
-    """
+    """A countable loop shown as a bar, logging a one-line summary to the file
+    (only) on close so the file and report still record the phase."""
 
     def __init__(
         self, *args, logger=None, step_name=None, summary_unit=None, summary_label=None, **kwargs
@@ -177,9 +148,8 @@ class _PhaseBar(tqdm):
         self._summary_label = summary_label
         self._summary_start = time.time()
         self._summarised = False
-        # Counted here rather than read from tqdm's ``n`` so the file summary is
-        # right even on a redirected run, where the bar is disabled and never
-        # advances its own counter.
+        # Counted here, not from tqdm's ``n``, so the summary is right on a
+        # redirected run where the bar is disabled and never advances.
         self._count = 0
         super().__init__(*args, **kwargs)
 
@@ -219,12 +189,10 @@ def progress_bar(
     logger=None,
     step_name=None,
 ):
-    """A tqdm bar in the pipeline's standard style.
+    """A tqdm bar in the pipeline's standard style for every countable loop.
 
-    Use for every countable loop — step internals and pipeline start-up alike —
-    so progress looks identical everywhere. When ``step_name`` is given the bar
-    gets the same ``time  name`` prefix as the log lines; when ``logger`` is given
-    it also writes a one-line summary to the file. Auto-disables off a terminal.
+    ``step_name`` adds the ``time  name`` prefix; ``logger`` also writes a
+    one-line summary to the file. Auto-disables off a terminal.
     """
     display = _bar_prefix(step_name) + desc
     return _PhaseBar(

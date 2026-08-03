@@ -71,15 +71,11 @@ class BaseQC:
     qc_outputs = []
 
     def __init__(self, data, **kwargs):
-        # data may be None when a test is instantiated  to
-        # introspect its required/provided variables from its parameters.
-        # Hold a reference rather than a deep copy: on a ~900 MB dataset the
-        # per-test full copy was the main QC RAM ratchet. Safe only because no
-        # test mutates self.data in place — tests read it, or re-narrow via
-        # self.data = self.data[self.required_variables] and add/replace _QC
-        # columns (new arrays), never writing into the shared arrays. A future
-        # test doing self.data[existing_var][mask] = ... would corrupt the live
-        # dataset, so keep to that contract or copy locally in that test.
+        # data may be None when a test is instantiated to introspect its
+        # required/provided variables from its parameters.
+        # Hold a reference, not a deep copy (the per-test copy was the main QC RAM
+        # ratchet). Safe only because tests never write into the shared arrays;
+        # a test needing in-place mutation must copy locally.
         self.data = data if data is not None else None
 
         # Connect to the main pipeline logging hierarchy
@@ -104,10 +100,7 @@ class BaseQC:
         return parameter_spec.describe(cls.parameter_schema or {})
 
     def log(self, message, console=True):
-        """Log an info-level message with the QC name prefix.
-
-        Set ``console=False`` to keep the line in the log file only.
-        """
+        """Log an info-level message with the QC name prefix. ``console=False`` keeps it in the log file only."""
         self.logger.info("[%s] %s", self.qc_name, message, extra={"console": console})
 
     def log_warn(self, message):
@@ -115,12 +108,7 @@ class BaseQC:
         self.logger.warning("[%s] %s", self.qc_name, message)
 
     def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
-        """Wrap a countable loop as a standard pipeline progress bar.
-
-        Same as :meth:`BaseStep.log_progress`, for QC tests: the bar runs under
-        the parent Apply QC step (pausing its elapsed timer) and records a
-        one-line summary to the log file.
-        """
+        """Wrap a countable loop as a standard pipeline progress bar (see :meth:`BaseStep.log_progress`)."""
         from pelagos_py.utils.console import progress_bar
 
         return progress_bar(

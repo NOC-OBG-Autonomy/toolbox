@@ -31,39 +31,37 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 from scipy.stats import linregress
 
-#: Diagnostics tuning for the method-comparison panels.
-CALC_SUFFIX = "__FOR_CALC"  #: suffix of the calculation-only copies added to the per-profile subset; see run().
-DAY_MIN_ELEVATION = 5.0  #: solar elevation (deg) above which a profile is "day".
-NIGHT_MAX_ELEVATION = -5.0  #: solar elevation (deg) below which a profile is "night".
-COMPARE_BIN_METRES = 5.0  #: depth bin (m) for pairing day/night median fluorescence.
-COMPARE_SURFACE_LIMIT_METRES = 50.0  #: only bins within this depth of the surface are scored (the quenching layer, where methods differ).
-MAX_COMPARE_PROFILES = 200  #: cap on day profiles run through every method.
-MIDDAY_MIDNIGHT_WINDOW_HOURS = 1.5  #: solar-time half-window (h) around solar noon/midnight; only profiles this close are used in the Fig-4-style midday-vs-midnight regression. Widen if too few pairs result.
-TIMESERIES_DEPTH_LIMIT = 300.0  #: max depth (m) shown in the timeseries; the window is dynamic but never deeper than this.
-TIMESERIES_DEPTH_MIN = 50.0  #: min depth (m) the dynamic timeseries window is allowed to shrink to.
-SECTION_MARKER_SIZE = 1.5  #: scatter marker size (points^2) for the section plots.
-SECTION_MAX_POINTS = 100_000  #: cap on points drawn in the bottom "by correction status" panel; larger is slower but shows more of the cloud.
+CALC_SUFFIX = "__FOR_CALC"  # suffix of the QC-masked calculation-only copies; see run().
 
-#: Colour/label per point category in the bottom section debug panel, in draw
-#: order (later entries plot on top, so 'corrected' sits over 'uncorrected').
-#: 'corrected' = value actually changed; 'uncorrected' = everything else.
+# Backscatter variables tried, in order, when 'bbp_var' is absent (despiked
+# baseline preferred, raw BBP as fallbacks); the step halts if none are present.
+BBP_VAR_FALLBACKS = ["BBP700_BASELINE", "BBP700", "BBP532_BASELINE", "BBP532"]
+
+# Night-reference tuning ('hemsley2015'/'thomalla2017').
+NIGHT_REF_BIN_METRES = 1.0  # depth bin (m) for averaging nighttime profiles.
+HEMSLEY_REGRESSION_DEPTH = 60.0  # top-of-water depth (m) the Hemsley regression is fit over.
+
+# Warn once if a backscatter-ratio correction lifts CHLA past this multiple of
+# the profile's own max (usually a near-zero bbp inflating the CHLA/bbp ratio).
+CORRECTION_WARN_FACTOR = 5.0
+
+# Diagnostics-only tuning for the method-comparison figure: plot appearance and
+# how day/night profiles are paired and scored. None of these affect the correction.
+COMPARE_BIN_METRES = 5.0  # depth bin (m) for pairing day/night median fluorescence.
+COMPARE_SURFACE_LIMIT_METRES = 50.0  # only bins this shallow are scored (where methods differ).
+MAX_COMPARE_PROFILES = 200  # cap on day profiles run through every method.
+MIDDAY_MIDNIGHT_WINDOW_HOURS = 1.5  # solar-time half-window (h) around noon/midnight for the regression.
+TIMESERIES_DEPTH_LIMIT = 300.0  # max depth (m) shown in the timeseries section.
+TIMESERIES_DEPTH_MIN = 50.0  # min depth (m) the dynamic section window shrinks to.
+SECTION_MARKER_SIZE = 1.5  # scatter marker size for the section plots.
+SECTION_MAX_POINTS = 100_000  # cap on points drawn in the bottom section panel.
+
+# Colour/label per category in the bottom section panel, in draw order
+# (later entries plot on top).
 SECTION_CATEGORY_STYLE = [
     ("uncorrected", "Uncorrected", "#3b6fb5"),
     ("corrected", "Corrected", "#e6cf8b"),
 ]
-
-#: Night-reference tuning for the 'hemsley2015'/'thomalla2017' methods.
-NIGHT_REF_BIN_METRES = 1.0  #: depth bin (m) for averaging nighttime profiles into a reference.
-HEMSLEY_REGRESSION_DEPTH = 60.0  #: top-of-water depth (m) over which the Hemsley regression is fit.
-
-#: Warn once if a backscatter-ratio correction lifts CHLA above this multiple of
-#: the profile's own max input (usually a near-zero bbp inflating the CHLA/bbp ratio).
-CORRECTION_WARN_FACTOR = 5.0
-
-#: Backscatter variables tried, in order, when the configured 'bbp_var' is
-#: absent from the data. The despiked baseline is preferred; raw BBP700/BBP532
-#: are fallbacks. If none are present the step halts.
-BBP_VAR_FALLBACKS = ["BBP700_BASELINE", "BBP700", "BBP532_BASELINE", "BBP532"]
 
 
 def check_chl_variables(self, allowed_requests):
@@ -95,9 +93,22 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     (3), bad (4) and missing (9); see ``qc_handling_settings``) inform none of the
     quantities the methods derive — quenching depth, night fl:bbp references,
     in-mixed-layer maxima, euphotic depth. They are still corrected like any other
-    sample; each method just reads a NaN-masked copy of its inputs (see
-    :meth:`_calc_values`) wherever it derives a quantity. So flagging the unstable
-    top few metres keeps it out of the references while it still gets corrected.
+    sample; each method just reads a NaN-masked copy of its inputs wherever it
+    derives a quantity, so flagging the unstable top few metres keeps it out of the
+    references while it still gets corrected.
+
+    The mixed layer depth is read from the ``MLD`` variable, produced by a
+    preceding Mixed Layer Depth step.
+
+    Example
+    -------
+    ::
+
+        - name: "CHLA Quenching"
+          parameters:
+            method: "xing2012"
+            apply_to: "CHLA"
+          diagnostics: true
     """
 
     step_name = "CHLA Quenching"
@@ -106,8 +117,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     required_variables = ["PROFILE_NUMBER", "TIME", "DEPTH", "LATITUDE", "LONGITUDE"]
     provided_variables = []
 
-    #: Method keys whose correction needs the solar-elevation angle, so the
-    #: per-profile sun inputs are only computed when one of them is selected.
+    # methods whose correction needs the solar-elevation angle (so the per-profile
+    # sun inputs are only computed when one of them is selected)
     methods_requiring_sun = {
         "xing2012",
         "biermann2015",
@@ -211,36 +222,18 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     # Step entry point
     # ==================================================================
     def run(self):
-        """
-        Example
-        -------
-        ::
-
-            - name: "CHLA Quenching"
-              parameters:
-                method: "xing2012"
-                apply_to: "CHLA"
-              diagnostics: true
-
-        The mixed layer depth is read from the ``MLD`` variable, which must be
-        produced by a preceding Mixed Layer Depth step.
-        """
-
         self.filter_qc()
 
-        # required for plotting the unprocessed data later
+        # kept uncorrected for the diagnostics plots
         self.data_copy = self.data.copy(deep=True)
 
-        # Check this step is being applied to a valid variable.
         self.apply_to, self.output_as = check_chl_variables(
             self,
             ["CHLA", "CHLA_ADJUSTED", "CHLA_FLUORESCENCE", "CHLA_FLUORESCENCE_ADJUSTED"],
         )
-        # If a new "_ADJUSTED" variable will be needed, create it
         if self.apply_to != self.output_as:
             self.data[self.output_as] = self.data[self.apply_to]
 
-        # Get the function call for the specified method
         method_key = self.method.lower()
         methods = {
             "xing2012": self.apply_xing2012_quenching_correction,
@@ -258,11 +251,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
         method_function = methods[method_key]
 
-        # Methods differ in which auxiliary variables they need; check the ones
-        # the chosen method relies on are present before doing any work.
+        # Each method needs a different subset of auxiliary variables; check the
+        # chosen one's are present up front. ZEU (euphotic depth) and Z_IPAR
+        # (isolume depth) come from a preceding 'Interpolate PAR' step.
         needs_mld = method_key in ("xing2012", "xing2018", "sackmann2008")
-        # Euphotic depth (ZEU) and iPAR isolume depth (Z_IPAR) come from a
-        # preceding 'Interpolate PAR' step now, not from PAR derived in place.
         needs_zeu = method_key in (
             "biermann2015", "hemsley2015", "thomalla2017", "swart2015",
         )
@@ -290,7 +282,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if missing:
             self.halt(f"Method '{self.method}' requires: " + "; ".join(missing) + ".")
 
-        # if the method requires sunlight angle, find the inputs for the sun angle calculation
+        # Per-profile median surface fix (time/lat/lon) for the solar-angle lookup.
         if method_key in self.methods_requiring_sun:
             self.sun_args = (
                 self.data[["PROFILE_NUMBER", "TIME", "DEPTH", "LATITUDE", "LONGITUDE"]]
@@ -298,7 +290,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 .dropna()
             )
 
-            # only look at the values nearest the surface and find when and where they were taken
+            # median over the 50 shallowest samples of each profile
             self.sun_args = (
                 self.sun_args.groupby("PROFILE_NUMBER", group_keys=True)
                 .apply(lambda x: x.nlargest(50, "DEPTH"), include_groups=False)
@@ -306,10 +298,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 .agg({var: "median" for var in ["TIME", "LATITUDE", "LONGITUDE"]})
             )
 
-        # Global-disable rules keyed off what each daytime profile carries (night
-        # profiles are skipped by every method, so they never gate anything). Only
-        # the scalar-driven / hybrid methods need this, so skip the solar pass
-        # otherwise.
+        # Scalar-driven / hybrid methods are all-or-nothing over daytime profiles,
+        # so gate on what every daytime profile carries (night profiles are skipped
+        # by every method). Skip the solar pass entirely for the other methods.
         self._effective_hybrid = self.hybrid
         gate = needs_zeu or needs_ipar or (method_key == "xing2018" and self.hybrid)
         if gate and hasattr(self, "sun_args"):
@@ -318,16 +309,13 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 for p in self.sun_args.index
                 if self._sun_elevation_for(int(p)) > self.day_min_elevation
             ]
-            # A scalar-driven method needs its scalar on every daytime profile;
-            # halt (rather than silently skip) if any lack it, pointing at the
-            # 'Interpolate PAR' interpolation toggle.
+            # halt (not silently skip) if a required per-profile scalar is missing
             if needs_zeu:
                 self._require_scalar_on_days("ZEU", "interpolate_zeu", day_pns)
             if needs_ipar:
                 self._require_scalar_on_days("Z_IPAR", "interpolate_ipar", day_pns)
-            # The Terrats 2020 hybrid de-quenches with the raw PAR profile at depth
-            # (the XB18 sigmoid), which this pipeline no longer reconstructs. If any
-            # daytime profile lacks a full PAR profile, disable the hybrid for the
+            # The Terrats 2020 hybrid needs the raw PAR profile at depth (the XB18
+            # sigmoid). If any daytime profile lacks it, disable the hybrid for the
             # whole run and fall back to pure Xing 2018 S08+ (needs only Z_IPAR).
             if method_key == "xing2018" and self.hybrid:
                 n_missing = self._count_profiles_without_full_par(day_pns)
@@ -340,12 +328,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                         f"add a PAR-filling step) to enable the hybrid."
                     )
 
-        # Methods that correct day profiles against nighttime references build
-        # those references once, up front, from the whole (uncorrected) dataset
-        # (the per-profile loop below only sees one profile at a time). With
-        # diagnostics on, build both night-based methods' references (when BBP +
-        # PAR are present) so they can be scored in the comparison panel too,
-        # not just when one of them is the configured method.
+        # The night-reference methods build their references once, up front, from
+        # the whole uncorrected dataset (the per-profile loop sees one profile at a
+        # time). With diagnostics on, build both so they can be scored in the
+        # comparison panel even when neither is the configured method.
         build_refs = {method_key} & {"hemsley2015", "thomalla2017"}
         if (
             self.diagnostics
@@ -355,14 +341,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ):
             build_refs |= {"hemsley2015", "thomalla2017"}
         for ref_method in build_refs:
-            # With diagnostics on, references are built for the comparison
-            # panels even when they aren't the configured method, so keep their
-            # build logs quiet - only time/RAM should print in diagnostics mode.
             self._build_night_references(ref_method, quiet=self.diagnostics)
 
-        # Subset the data to just the variables the chosen method needs. ZEU /
-        # Z_IPAR are per-profile scalars from the 'Interpolate PAR' step; par_var
-        # is only needed by the effective Terrats hybrid (raw PAR at depth).
+        # Subset to just the variables the chosen method needs; par_var is only
+        # needed by the effective Terrats hybrid (raw PAR at depth).
         subset_vars = ["PROFILE_NUMBER", "DEPTH", self.apply_to]
         if needs_mld:
             subset_vars.append("MLD")
@@ -376,17 +358,14 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             subset_vars.append(self.par_var)
         data_subset = self.data[subset_vars]
 
-        # Calculation-only copies of each input, with flagged samples NaN'd out. Every
-        # quantity the methods derive (quenching depth, fl:bbp ratios, in-MLD maxima)
-        # reads these, so a flagged sample never informs a correction. The raw
-        # variables stay the base the correction is written onto, so those samples are
-        # still corrected like any other. (ZEU / Z_IPAR are already QC-masked at
-        # source in the Interpolate PAR step, so they need no calc copy here.)
+        # QC-masked copies of each input (flagged samples NaN'd). Every quantity the
+        # methods *derive* reads these, so a flagged sample never informs a
+        # correction, while the raw variables stay the base the correction writes
+        # onto. (ZEU / Z_IPAR are already QC-masked at source.)
         calc_vars = [self.apply_to]
         if needs_bbp:
             calc_vars.append(self.bbp_var)
-        # With diagnostics on the comparison panels re-run every method, so build the
-        # backscatter copy even when the configured method doesn't read it.
+        # diagnostics re-run every method, so build the backscatter copy regardless
         if self.diagnostics:
             calc_vars += [
                 var
@@ -399,33 +378,27 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             calc = np.where(
                 usable, np.asarray(self.data_copy[var].values, dtype=float), np.nan
             )
-            # data_copy carries them too: with diagnostics on, the comparison panels
-            # re-run the methods over its profiles and must derive the same quantities.
+            # data_copy carries them too, for the diagnostics re-runs
             self.data_copy[f"{var}{CALC_SUFFIX}"] = (self.data_copy[var].dims, calc)
             if var in data_subset.data_vars:
                 data_subset[f"{var}{CALC_SUFFIX}"] = (data_subset[var].dims, calc)
 
-        # Apply the checks across individual profiles
+        # Correct one profile at a time, stitching each result back into the full data.
         profile_numbers = np.unique(
             data_subset["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS")
         )
         for profile_number in self.log_progress(profile_numbers, desc="", unit="prof"):
-
-            # Subset the data
             profile = data_subset.where(
                 data_subset["PROFILE_NUMBER"] == profile_number, drop=True
             )
-
             corrected_chla = method_function(profile)
-
-            # Stitch back into the full data
             profile_indices = np.where(self.data["PROFILE_NUMBER"] == profile_number)
             self.data[self.output_as][profile_indices] = corrected_chla
 
         self.reconstruct_data()
         self.update_qc()
 
-        # Generate new QC if a non-adjusted variable was used in processing (this causes an _ADJUSTED variable to be added)"
+        # a new _ADJUSTED output variable needs its own QC, copied from the source
         if self.apply_to != self.output_as:
             self.generate_qc({f"{self.output_as}_QC": [f"{self.apply_to}_QC"]})
 
@@ -439,30 +412,19 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     # Shared helpers - inputs and per-profile quantities used by the methods below
     # ==================================================================
     def _calc_values(self, profile, var):
-        """``var``'s calculation-only copy for this profile (flagged samples NaN'd).
-
-        Read this wherever a quantity is *derived*; read the raw ``profile[var]``
-        wherever a value is being corrected or compared against its own correction.
-        """
+        # QC-masked copy of var: read when *deriving* a quantity, not when correcting.
         return np.asarray(profile[f"{var}{CALC_SUFFIX}"].values, dtype=float)
 
     @staticmethod
     def _profile_scalar(profile, name):
-        """The per-profile scalar ``name`` (broadcast across the profile) or NaN.
-
-        ``ZEU``/``Z_IPAR``/``MLD`` carry one value per profile broadcast to every
-        measurement, so the first finite sample is that value.
-        """
+        # ZEU/Z_IPAR/MLD are one value per profile broadcast across it; take the first.
         vals = np.asarray(profile[name].values, dtype=float)
         finite = vals[np.isfinite(vals)]
         return float(finite[0]) if finite.size else np.nan
 
     def _require_scalar_on_days(self, name, toggle, day_pns):
-        """Halt if any daytime profile lacks the per-profile scalar ``name``.
-
-        Global-disable rule: a scalar-driven method is all-or-nothing. ``toggle``
-        names the 'Interpolate PAR' interpolation switch that would fill the gap.
-        """
+        # Scalar-driven methods are all-or-nothing; halt if any daytime profile
+        # lacks name, pointing at the 'Interpolate PAR' toggle that would fill it.
         pnum = self.data["PROFILE_NUMBER"].values
         vals = np.asarray(self.data[name].values, dtype=float)
         missing = [pn for pn in day_pns if not np.any(np.isfinite(vals[pnum == pn]))]
@@ -474,12 +436,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
 
     def _count_profiles_without_full_par(self, day_pns):
-        """Number of daytime profiles lacking a usable raw PAR profile at depth.
-
-        A profile needs at least four finite, positive PAR points (the minimum
-        for a Kd fit) for the Terrats XB18 sigmoid to run; fewer means the hybrid
-        cannot de-quench it. Returns the count over the given daytime profiles.
-        """
+        # The XB18 sigmoid needs at least MIN_PTS finite positive PAR points (a Kd
+        # fit); count daytime profiles that fall short and so can't run the hybrid.
         MIN_PTS = 4
         if self.par_var not in self.data.data_vars:
             return len(day_pns)
@@ -495,13 +453,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return missing
 
     def _resolve_bbp_var(self):
-        """Return an available backscatter variable, preferring the configured one.
-
-        The configured ``bbp_var`` is used if present; otherwise the
-        ``BBP_VAR_FALLBACKS`` are tried in order (despiked baseline first, then
-        raw), logging which one is used. Returns ``None`` if none are present so
-        the caller can halt with a clear "not found" message.
-        """
+        # Configured bbp_var if present, else the first available fallback (logged);
+        # None if none are present, so the caller can halt.
         candidates = [self.bbp_var] + [b for b in BBP_VAR_FALLBACKS if b != self.bbp_var]
         for name in candidates:
             if name in self.data.data_vars:
@@ -514,15 +467,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return None
 
     def _warn_if_correction_blows_up(self, chlf, chl_corr):
-        """Warn once if a correction lifted CHLA implausibly far above the input.
-
-        The backscatter-ratio methods reset fluorescence to ``bbp * ratio``; a
-        near-zero backscatter inflates the ratio and produces a corrected value
-        far above anything observed. Judged on the corrected *output* (not the
-        ratio), so a large-but-harmless ratio doesn't cry wolf. Suppressed during
-        diagnostics so only the configured method's real output can warn. Fires at
-        most once per step run.
-        """
+        # Warn once per run if a bbp-ratio method lifts CHLA implausibly far above
+        # the input (a near-zero bbp inflating the ratio). Judged on the output, not
+        # the ratio; suppressed during diagnostics so only the real correction warns.
         if getattr(self, "_blowup_warned", False) or getattr(self, "_suppress_warn", False):
             return
         chlf = np.asarray(chlf, dtype=float)
@@ -544,19 +491,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         )
 
     def _sun_elevation(self, profile):
-        """Solar elevation (degrees) for a profile from its median surface fix.
-
-        Uses the per-profile median TIME/LATITUDE/LONGITUDE gathered in ``run``
-        (``self.sun_args``); a value > 0 means daytime.
-        """
         return self._sun_elevation_for(int(profile["PROFILE_NUMBER"][0]))
 
     def _sun_elevation_for(self, profile_number):
-        """Cached solar elevation (degrees) for a profile number.
-
-        The diagnostics run every method over many profiles, so the pvlib
-        solar-position lookup is memoised per profile.
-        """
+        # Solar elevation (deg) from the profile's median surface fix, memoised
+        # per profile (diagnostics run every method over many profiles).
         cache = getattr(self, "_sun_cache", None)
         if cache is None:
             cache = self._sun_cache = {}
@@ -568,14 +507,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return cache[profile_number]
 
     def _hours_from_solar_noon(self, profile_number):
-        """Hours between a profile's surface fix and its nearest solar noon.
-
-        Returns a value in [0, 12]: 0 at solar noon (peak sun, maximum
-        quenching), 12 at solar midnight (no quenching). Uses the equation of
-        time and longitude to convert the UTC fix to local apparent solar time,
-        so "midday"/"midnight" track the sun rather than the clock regardless of
-        longitude or season. Memoised per profile like the elevation lookup.
-        """
+        # Hours from nearest solar noon, in [0, 12]: 0 = solar noon (max quenching),
+        # 12 = solar midnight. Uses the equation of time + longitude to track the
+        # sun rather than the clock. Memoised per profile.
         cache = getattr(self, "_solar_noon_cache", None)
         if cache is None:
             cache = self._solar_noon_cache = {}
@@ -591,23 +525,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return cache[profile_number]
 
     def _build_night_references(self, method_key, quiet=False):
-        """Build the nighttime references used by 'hemsley2015'/'thomalla2017'.
-
-        Runs once in :meth:`run` before the per-profile loop. Profiles are
-        classified day/night by solar elevation (``> day_min_elevation`` day,
-        ``< night_max_elevation`` night; both default to 0°)
-        from the per-profile surface fix in ``self.sun_args``.
-
-        - ``hemsley2015`` fits one global fluorescence-vs-backscatter regression
-          over the top ``HEMSLEY_REGRESSION_DEPTH`` m of all nighttime data,
-          stored on ``self._hemsley_regression``.
-        - ``thomalla2017`` groups consecutive nighttime profiles into "nights",
-          builds a depth-binned mean fluorescence / mean bbp / fl:bbp ratio
-          profile per night (``self._night_refs``), and maps each daytime
-          profile to its most recent *preceding* night
-          (``self._thomalla_day_night``). The earliest daytime profiles, which
-          have no preceding night, fall back to the nearest *following* night.
-        """
+        # Build the nighttime references, once, before the per-profile loop:
+        #   hemsley2015  -> one global night fl-vs-bbp regression (self._hemsley_regression)
+        #   thomalla2017 -> per-night depth-binned fl:bbp profiles (self._night_refs),
+        #                   each day profile mapped to its most recent preceding night
+        #                   (self._thomalla_day_night); earliest days use the next night.
         pns = [int(p) for p in self.sun_args.index]
         elev = {pn: self._sun_elevation_for(pn) for pn in pns}
         times = {pn: pd.to_datetime(self.sun_args.loc[pn, "TIME"]).value for pn in pns}
@@ -703,13 +625,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _bin_night(z, fl, bbp):
-        """Depth-binned mean fluorescence / bbp / fl:bbp ratio for a night.
-
-        Returns a dict with ascending bin-centre depths ``z`` (positive down),
-        mean fluorescence ``fl``, and the ``ratio`` (mean fl / mean bbp), or
-        ``None`` if no bin has both a finite mean fluorescence and a positive
-        mean backscatter.
-        """
+        # Depth-binned {z, mean fl, fl:bbp ratio} for a night (ascending z), or
+        # None if no bin has both finite mean fl and positive mean bbp.
         z = np.asarray(z, dtype=float)
         fl = np.asarray(fl, dtype=float)
         bbp = np.asarray(bbp, dtype=float)
@@ -741,43 +658,24 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
 
     # ==================================================================
-    # Correction methods, in order of publication. Each is a public apply_*_quenching_correction
-    # ==================================================================
-    # taking a single-profile dataset and returning that profile's corrected
+    # Correction methods (public apply_*_quenching_correction), in order of
+    # publication. Each takes a single-profile dataset and returns its corrected
     # fluorescence array, followed by the private helpers it uses.
     # ==================================================================
-    # ------------------------------------------------------------------
-    # Sackmann et al. (2008), Biogeosciences 5:2839.
-    # Reference: max fl:bbp ratio within the mixed layer.
-    # Keys off: MLD, bbp. Implemented by _apply_max_ratio_correction
-    # (window='mld'), shared with Swart 2015 below.
-    # ------------------------------------------------------------------
     def apply_sackmann2008_quenching_correction(self, profile):
-        """
-        Apply the Sackmann et al. (2008, *Biogeosciences*, 5:2839) NPQ
-        correction.
+        """Sackmann et al. (2008, *Biogeosciences*, 5:2839) NPQ correction.
 
         Within the mixed layer the maximum fluorescence-to-backscatter ratio
-        ``R_max = max(F_Chl / b_bp)`` is taken as the non-quenched reference (the
-        night-time fl:bbp ratio is assumed uniform there). Fluorescence from the
-        surface to the depth of ``R_max`` is reset to ``b_bp x R_max``. See
-        :meth:`_apply_max_ratio_correction`.
+        ``R_max = max(F_Chl / b_bp)`` is taken as the non-quenched reference, and
+        fluorescence from the surface to the depth of ``R_max`` is reset to
+        ``b_bp x R_max`` (needs MLD + backscatter).
         """
         return self._apply_max_ratio_correction(profile, window="mld")
 
     def _apply_max_ratio_correction(self, profile, window):
-        """Max fl:bbp-ratio NPQ correction shared by 'sackmann2008'/'swart2015'.
-
-        Finds the largest (least-quenched) ``F_Chl / b_bp`` ratio within a search
-        window and resets fluorescence to ``b_bp x R_max`` from the surface down
-        to the depth of that maximum ratio (Table 1 of Thomalla et al. 2017). The
-        window is the mixed layer (``window='mld'``, Sackmann 2008) or the
-        euphotic zone (``window='zeu'``, Swart 2015).
-
-        On any condition that prevents a correction (night, missing inputs,
-        degenerate profile) the uncorrected fluorescence is returned unchanged.
-        The correction is clamped so it never lowers fluorescence.
-        """
+        # Shared max fl:bbp-ratio correction (Sackmann window='mld' / Swart
+        # window='zeu'): reset F to bbp x R_max from the surface to the depth of the
+        # max ratio. Returns chlf unchanged if it can't correct; never lowers F.
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
         bbp = np.asarray(profile[self.bbp_var].values, dtype=float)
@@ -818,71 +716,30 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         r_max = fratio[idx_rmax]
         rmax_depth = float(depth[idx_rmax])
 
-        # Reset F to bbp x R_max from the surface to the depth of the max ratio.
         chl_corr = np.copy(chlf)
         fill = (depth <= rmax_depth) & np.isfinite(bbp) & (~np.isnan(chlf))
         chl_corr[fill] = bbp[fill] * r_max
 
-
-        # Never let the correction reduce fluorescence (fmax ignores NaNs).
+        # never let the correction reduce fluorescence (fmax ignores NaNs)
         result = np.fmax(chlf, chl_corr)
         self._warn_if_correction_blows_up(chlf, result)
         return result
 
-    # ------------------------------------------------------------------
-    # Xing et al. (2012), JGR-Oceans 117:C01019.
-    # Reference: max fluorescence within the mixed layer.
-    # Keys off: MLD.
-    # ------------------------------------------------------------------
     def apply_xing2012_quenching_correction(self, profile):
-        """
-        Apply non-photochemical quenching (NPQ) correction following
-        Xing et al. (2012, *JGR–Oceans*, 117:C01019).
+        """Xing et al. (2012, *JGR–Oceans*, 117:C01019) NPQ correction.
 
-        The maximum fluorescence within the mixed-layer depth (MLD)
-        is taken as the non-quenched reference. All shallower
-        (PRES < z_qd) values are adjusted upward to that maximum.
-        Correction is only applied when solar elevation > 0°.
-
-        Parameters
-        ----------
-        chlf : array-like of shape (N,)
-            Uncorrected chlorophyll fluorescence profile F_Chl(PRES).
-        pres : array-like of shape (N,)
-            Pressure (dbar), increasing with depth.
-        mld : float
-            Mixed-layer depth (m or dbar).
-        sun_angle : float
-            Solar elevation angle (degrees). NPQ correction is applied
-            only if `sun_angle > 0`.
-
-        Returns
-        -------
-        chl_corr : ndarray of shape (N,)
-            NPQ-corrected fluorescence profile.
-        npq : ndarray of shape (N,)
-            NPQ index = (chl_corr − chlf) / chlf.
-        z_qd : float
-            Quenching depth (dbar): pressure of maximum fluorescence
-            within the MLD. NaN if not computable or if night-time.
-
-        Notes
-        -----
-        • No correction is applied if solar elevation ≤ 0° (nighttime).
-        • Shallower than z_qd → fluorescence set to Fmax (non-quenched reference).
-        • Below MLD → unchanged.
+        The maximum fluorescence within the mixed-layer depth (MLD) is taken as
+        the non-quenched reference; all shallower values are lifted to it.
+        Applied only in daytime (needs MLD).
         """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
         N = len(chlf)
 
-        # --- Read the MLD for this profile (a per-profile scalar broadcast across
-        # its measurements by the Mixed Layer Depth step)
         mld_values = np.asarray(profile["MLD"].values, dtype=float)
         finite_mld = mld_values[np.isfinite(mld_values)]
         mld = float(finite_mld[0]) if finite_mld.size else np.nan
 
-        # --- Night-time or invalid inputs: skip correction
         profile_number = int(profile["PROFILE_NUMBER"][0])
         time, lat, long = self.sun_args.loc[profile_number].to_numpy()
         time_utc = pd.to_datetime(time).tz_localize("UTC")
@@ -898,38 +755,29 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ):
             return chlf
 
-        # --- Identify max F_Chl within the mixed layer (surface to MLD).
         within_mld = depth <= mld
         if not np.any(within_mld):
             return chlf
 
-        # The reference maximum is derived, so flagged samples cannot supply it.
+        # reference max is derived, so flagged samples cannot supply it
         chlf_mld = np.where(within_mld, self._calc_values(profile, self.apply_to), np.nan)
         if np.all(np.isnan(chlf_mld)):
             return chlf
         idx_max, chlf_max = np.nanargmax(chlf_mld), np.nanmax(chlf_mld)
         chlf_max_depth = float(depth[idx_max])
 
-        # --- Apply correction: flatten everything shallower than the reference.
+        # flatten everything shallower than the reference up to that max
         chl_corr = np.copy(chlf)
         chl_corr[(depth <= chlf_max_depth) & (~np.isnan(chlf))] = chlf_max
 
         return chl_corr
 
-    # ------------------------------------------------------------------
-    # Biermann et al. (2015), Ocean Science 11:83-91.
-    # Reference: max fluorescence within the euphotic zone.
-    # Keys off: PAR (for Zeu).
-    # ------------------------------------------------------------------
     def apply_biermann2015_quenching_correction(self, profile):
-        """
-        Apply non-photochemical quenching (NPQ) correction following
-        Biermann et al. (2015, *Ocean Science*, 11:83-91).
+        """Biermann et al. (2015, *Ocean Science*, 11:83-91) NPQ correction.
 
-        The maximum fluorescence within the euphotic zone (surface to Zeu) is
-        taken as the non-quenched reference; all shallower values are lifted to
-        it. Zeu is derived per profile from the PAR profile (1% light level).
-        Correction is applied only in daytime (solar elevation > 0).
+        Like Xing 2012 but the reference is the maximum fluorescence within the
+        euphotic zone (surface to ZEU, the 1% light level) rather than the mixed
+        layer. Applied only in daytime (needs ZEU).
         """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
@@ -948,8 +796,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ):
             return chlf
 
-        # Reference = max F_Chl within the euphotic zone (surface to Zeu). Derived,
-        # so flagged samples cannot supply it.
+        # reference max is derived, so flagged samples cannot supply it
         chlf_calc = self._calc_values(profile, self.apply_to)
         within_zeu = depth <= zeu
         chlf_within = np.where(within_zeu, chlf_calc, np.nan)
@@ -960,34 +807,18 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         z_qd = depth[idx_max]
         f_max = chlf_calc[idx_max]
 
-        # Lift everything shallower than the quenching depth to the reference.
         chl_corr = np.copy(chlf)
         chl_corr[(depth <= z_qd) & (~np.isnan(chlf))] = f_max
 
         return chl_corr
 
-    # ------------------------------------------------------------------
-    # Hemsley et al. (2015), Biogeosciences 12:7093.
-    # Reference: one global night fluorescence-bbp regression.
-    # Keys off: bbp, PAR (for Zeu); regression built by
-    # _build_night_references.
-    # ------------------------------------------------------------------
     def apply_hemsley2015_quenching_correction(self, profile):
-        """
-        Apply the Hemsley et al. (2015, *Biogeosciences*, 12:7093) NPQ
-        correction as applied by Thomalla et al. (2017).
+        """Hemsley et al. (2015, *Biogeosciences*, 12:7093) NPQ correction.
 
-        A single global regression of nighttime fluorescence against
-        backscatter over the top ``HEMSLEY_REGRESSION_DEPTH`` metres,
-        ``Chl_NT = m*bbp_NT + c``, is fit once for the whole deployment (see
-        :meth:`_build_night_references`). For each daytime profile the fitted
-        slope and intercept are then applied over the euphotic zone,
-        ``Chl_DT(z) = m*bbp_DT(z) + c`` for ``0 <= z <= Zeu``. Zeu is the 1%
-        light level derived from the PAR profile.
-
-        Following Thomalla et al. (2017), the regression is applied to *all*
-        daytime profiles (their study did not skip profiles with a subsurface
-        maximum).
+        One global regression of nighttime fluorescence against backscatter,
+        ``Chl = m*bbp + c``, is fit once for the whole deployment, then applied to
+        every daytime profile over the euphotic zone ``0 <= z <= ZEU`` (needs
+        backscatter + ZEU).
         """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
@@ -1016,47 +847,23 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         return chl_corr
 
-    # ------------------------------------------------------------------
-    # Swart et al. (2015), J. Plankton Res. 37:635.
-    # Reference: max fl:bbp ratio within the euphotic zone.
-    # Keys off: bbp, PAR (for Zeu). Implemented by
-    # _apply_max_ratio_correction (window='zeu'), above.
-    # ------------------------------------------------------------------
     def apply_swart2015_quenching_correction(self, profile):
-        """
-        Apply the Swart et al. (2015, *J. Plankton Res.*, 37:635) NPQ
-        correction.
+        """Swart et al. (2015, *J. Plankton Res.*, 37:635) NPQ correction.
 
-        Same scheme as Sackmann et al. (2008) but the maximum
-        fluorescence-to-backscatter ratio is sought within the euphotic zone
-        (surface to Zeu, the 1% light level from the PAR profile) rather than the
-        mixed layer. See :meth:`_apply_max_ratio_correction`.
+        Same scheme as Sackmann 2008, but the maximum fluorescence-to-backscatter
+        ratio is sought within the euphotic zone (surface to ZEU) rather than the
+        mixed layer (needs backscatter + ZEU).
         """
         return self._apply_max_ratio_correction(profile, window="zeu")
 
-    # ------------------------------------------------------------------
-    # Thomalla et al. (2017), L&O: Methods 16:132 ('this study').
-    # Reference: the preceding night's fl:bbp ratio profile, applied
-    # above the quenching depth QD.
-    # Keys off: bbp, PAR (for Zeu); references built by
-    # _build_night_references.
-    # ------------------------------------------------------------------
     def apply_thomalla2017_quenching_correction(self, profile):
-        """
-        Apply the Thomalla et al. (2017, *L&O: Methods*, 16:132) NPQ
-        correction ("this study").
+        """Thomalla et al. (2017, *L&O: Methods*, 16:132) NPQ correction.
 
-        Each daytime profile is corrected against its most recent *preceding*
-        night's mean fluorescence-to-backscatter ratio profile (built in
-        :meth:`_build_night_references`). Above the quenching depth QD,
-        fluorescence is reset to ``Flc_DT(z) = (Fl_NT(z)/bbp_NT(z)) * bbp_DT(z)``.
-        Per the paper's intercomparison rule, the correction is kept only where
-        it *raises* the fluorescence; otherwise the original value is retained.
-
-        QD is the base of the quenching layer, found from the night-minus-day
-        fluorescence difference within the euphotic zone (see
-        :meth:`_quenching_depth`). The earliest daytime profiles have no
-        preceding night and instead use the nearest following night.
+        Each daytime profile is corrected against its most recent preceding
+        night's mean fl:bbp ratio profile. Above the quenching depth QD,
+        fluorescence is reset to ``(Fl_NT/bbp_NT) * bbp_DT``, kept only where that
+        raises it. QD comes from the night-minus-day fluorescence difference
+        within the euphotic zone (needs backscatter + ZEU).
         """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
@@ -1111,15 +918,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _quenching_depth(z, fl_day, fl_night, zeu):
-        """Quenching depth QD (positive-down m) from the night-day fl difference.
-
-        Follows Thomalla et al. (2017): within the euphotic zone the difference
-        ``D(z) = Fl_NT(z) - Fl_DT(z)`` is anchored at its near-surface maximum
-        (top 5 m) and QD is taken as the point, deeper than that anchor, giving
-        the steepest gradient down to one of the five smallest absolute
-        differences or a zero crossing of ``D``. Returns ``NaN`` when it cannot
-        be resolved.
-        """
+        # Quenching depth QD (positive-down m), Thomalla 2017: within the euphotic
+        # zone the night-day difference D(z) is anchored at its near-surface max
+        # (top 5 m); QD is the deeper point of steepest gradient down to one of the
+        # five smallest |D| or a zero crossing. NaN if unresolvable.
         z = np.asarray(z, dtype=float)
         D = np.asarray(fl_night, dtype=float) - np.asarray(fl_day, dtype=float)
         mask = np.isfinite(z) & np.isfinite(D) & (z >= 0) & (z <= zeu)
@@ -1155,65 +957,29 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 best_gradient, best_qd = gradient, float(zz[i])
         return best_qd
 
-    # ------------------------------------------------------------------
-    # Xing et al. (2018), Optics Express 26:24734 (S08+), optionally extended
-    # by the Terrats et al. (2020) X18_S08 hybrid via the 'hybrid' parameter.
-    # Reference: max fl:bbp ratio in the NPQ layer (0 to the shallower
-    # of MLD and the iPAR=15 depth).
-    # Keys off: MLD, bbp, PAR. Implemented by _apply_xing_terrats.
-    # ------------------------------------------------------------------
     def apply_xing2018_quenching_correction(self, profile):
-        """
-        Apply the Xing et al. (2018, *Optics Express*, 26:24734) S08+ NPQ
-        correction, optionally extended by the Terrats et al. (2020, *GRL*,
-        e2020GL089059) X18_S08 hybrid.
+        """Xing et al. (2018, *Optics Express*, 26:24734) S08+ NPQ correction,
+        optionally extended by the Terrats et al. (2020, *GRL*) X18_S08 hybrid.
 
-        Which correction a profile receives is set by the ``hybrid`` parameter
-        and, when ``hybrid`` is on, by the profile's own mixing regime. The
-        mixing regime compares the depth at which downwelling iPAR falls to
-        15 umol m-2 s-1 against the mixed-layer depth:
+        The mixing regime compares the iPAR=15 isolume depth against the MLD.
 
-        - **Deep mixing** (``iPAR=15 depth <= MLD``) — the mixed layer reaches
-          below the lit zone.
-        - **Shallow mixing** (``iPAR=15 depth > MLD``) — light penetrates below
-          the mixed layer.
+        ``hybrid=False`` (pure Xing 2018)
+            Every daytime profile gets S08+: within the NPQ layer (surface to the
+            shallower of MLD and the iPAR=15 depth) the fl:bbp ratio is maximised
+            and fluorescence is reset to ``b_bp x R_max``.
 
-        ``hybrid = False`` (pure Xing 2018)
-            Every daytime profile gets the S08+ correction regardless of mixing
-            regime. Within the NPQ layer (the surface down to the shallower of
-            the MLD and the iPAR=15 depth) the fluorescence-to-backscatter ratio
-            ``F_Chl / b_bp`` is maximised, and fluorescence across that layer is
-            reset to ``b_bp x R_max``.
+        ``hybrid=True`` (Terrats 2020, the default)
+            Deep-mixing profiles (iPAR=15 depth <= MLD) get S08+ as above.
+            Shallow-mixing profiles instead get the XB18 sigmoid below the MLD and
+            ``b_bp x R_MLD`` above it.
 
-        ``hybrid = True`` (Terrats 2020 X18_S08, the default)
-            Deep-mixing profiles get the same Xing (2018) S08+ correction as
-            above. Shallow-mixing profiles instead get the Terrats (2020)
-            treatment: the XB18 sigmoid de-quenches fluorescence below the MLD,
-            and everything above the MLD is reset to ``b_bp x R_MLD``, where
-            ``R_MLD`` is the fl:bbp ratio at the shallowest valid point just
-            below the MLD.
-
-        In both cases the correction is clamped so it can never lower
-        fluorescence, and profiles that cannot be corrected (night, missing
-        inputs, degenerate profile) are returned unchanged.
-
-        See :meth:`_apply_xing_terrats` for the implementation.
+        The correction never lowers fluorescence (needs MLD + backscatter + PAR).
         """
         return self._apply_xing_terrats(
             profile, hybrid=getattr(self, "_effective_hybrid", self.hybrid)
         )
 
     def _apply_xing_terrats(self, profile, hybrid):
-        """Backscatter-based NPQ correction behind the 'xing2018' method.
-
-        With ``hybrid=False`` the S08+ deep-mixing branch is always used
-        (Xing 2018). With ``hybrid=True`` the shallow-mixing branch (Terrats
-        2020) is used when the iPAR isolume depth (``Z_IPAR``) is deeper than the
-        MLD; that branch de-quenches with the raw PAR profile at depth.
-
-        On any condition that prevents a correction (night, missing inputs,
-        degenerate profile) the uncorrected fluorescence is returned unchanged.
-        """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
         bbp = np.asarray(profile[self.bbp_var].values, dtype=float)
@@ -1301,8 +1067,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             above = (depth <= mld) & np.isfinite(bbp) & (~np.isnan(chlf))
             chl_corr[above] = bbp[above] * r_mld
 
-
-        # Never let the correction reduce fluorescence (fmax ignores NaNs).
+        # never let the correction reduce fluorescence (fmax ignores NaNs)
         result = np.fmax(chlf, chl_corr)
         self._warn_if_correction_blows_up(chlf, result)
         return result
@@ -1310,7 +1075,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     # ==================================================================
     # Diagnostics
     # ==================================================================
-    #: Display labels for the implemented methods (comparison panel titles).
+    # comparison-panel titles per method
     _METHOD_LABELS = {
         "none": "No correction",
         "xing2012": "Xing 2012",
@@ -1322,8 +1087,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         "sackmann2008": "Sackmann 2008",
     }
 
-    #: One- or two-line plain-language summary of each method's correction,
-    #: shown as a caption beneath the example profile.
+    # plain-language caption per method, shown beneath the example profile
     _METHOD_DESCRIPTIONS = {
         "xing2012": (
             "Quenching depth (QD) is the depth of max CHLA in range 0 – MLD.\n"
@@ -1355,8 +1119,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ),
     }
 
-    #: Appended to the 'xing2018' caption, since its correction depends on the
-    #: 'hybrid' parameter as well as the method name.
+    # appended to the 'xing2018' caption (its correction also depends on 'hybrid')
     _HYBRID_NOTES = {
         True: (
             "\nhybrid on: shallow mixing (iPAR=15 deeper than MLD) instead uses\n"
@@ -1366,28 +1129,12 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     }
 
     def generate_diagnostics(self):
-        """One figure summarising the quenching correction.
-
-        **Left** — a two-column grid of the no-correction baseline and every
-        method option (unimplemented ones as placeholders). Each implemented
-        method is run over *all* the day profiles and scored against each one's
-        nearest-in-time night profile, paired per depth bin within the top
-        ``COMPARE_SURFACE_LIMIT_METRES`` where quenching acts. Each panel shows
-        the scatter, the 1:1 line, the regression fit, and RMSE/Bias/R2; the
-        shared sample size ``n`` is noted once in the spare cell. ``xing2018``
-        is scored with the configured ``hybrid`` setting.
-
-        **Top right** — the original and corrected fluorescence as depth-time
-        sections, plus a map of which points the correction actually changed.
-
-        **Bottom right** — an example day profile for the *configured* method
-        (unchanged points, the original quenched values, and the corrected
-        values), with a short caption beneath describing that method.
-        """
+        # One figure: left = method-comparison scatter grid (every method scored
+        # against night profiles), top right = original/corrected depth-time
+        # sections, bottom right = an example day profile for the configured method.
         mpl.use("tkagg")
 
-        # The panels re-run every method over many profiles; only the configured
-        # method's real correction (above) should raise the blow-up warning.
+        # panels re-run every method, so suppress the blow-up warning here
         self._suppress_warn = True
 
         if not hasattr(self, "sun_args"):
@@ -1395,11 +1142,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             return
 
         fig = plt.figure(figsize=(21, 12), dpi=120)
-        # Left: the method-comparison grid (unchanged, full height). Right: the
-        # depth-time sections along the top - wide and short - with the example
-        # profile on the bottom row.
-        # Tight outer margins so the panels fill the figure (leaving just enough
-        # for the suptitle, the outer tick/axis labels and the colourbars).
+        # tight outer margins so the panels fill the figure
         outer = fig.add_gridspec(
             1, 2, width_ratios=[1.4, 2.2], wspace=0.14,
             left=0.045, right=0.965, top=0.93, bottom=0.055,
@@ -1435,9 +1178,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
             return
 
-        # xing2018 needs Z_IPAR for the S08+ layer; the Terrats hybrid branch
-        # additionally needs the raw PAR profile, so require par_var only when the
-        # hybrid is (effectively) on for this run.
+        # par_var is only needed when the Terrats hybrid is (effectively) on
         xing_needs = {"MLD", self.bbp_var, "Z_IPAR"}
         if getattr(self, "_effective_hybrid", self.hybrid):
             xing_needs = xing_needs | {self.par_var}
@@ -1447,7 +1188,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 self.apply_biermann2015_quenching_correction,
                 {"ZEU"},
             ),
-            # Scored with whatever 'hybrid' is configured to, matching the run.
             "xing2018": (
                 self.apply_xing2018_quenching_correction,
                 xing_needs,
@@ -1461,8 +1201,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 {self.bbp_var, "ZEU"},
             ),
         }
-        # The night-reference methods can only be scored when their references
-        # were built (i.e. when one of them is the configured method).
+        # night-reference methods are only scorable once their references are built
         if getattr(self, "_hemsley_regression", None) is not None:
             implemented["hemsley2015"] = (
                 self.apply_hemsley2015_quenching_correction,
@@ -1481,22 +1220,20 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         subsets = self._profile_subsets(set(day_pns) | set(night_pns))
         night_dv = self._raw_dv(night_pns, subsets)
 
-        # 'none' = no-correction baseline, then each runnable method.
+        # 'none' = no-correction baseline, then each runnable method
         results = {"none": self._score(self._raw_dv(day_pns, subsets), night_dv, pairs)}
         for key, fn in runnable.items():
             day_dv = self._run_method_over(fn, day_pns, subsets)
             results[key] = self._score(day_dv, night_dv, pairs)
 
-        # Two-column grid: the no-correction baseline, then every method option
-        # (any that can't run for want of an input variable shown as a
-        # placeholder). The +1 reserves a cell for the sample-size box below.
+        # two-column grid: baseline + every method (un-runnable ones as
+        # placeholders); +1 cell reserves space for the sample-size box
         panels = ["none"] + self.parameter_schema["method"]["options"]
         ncols = 2
         nrows = -(-(len(panels) + 1) // ncols)
         gl = subspec.subgridspec(nrows, ncols, hspace=0.55, wspace=0.34)
 
-        # x-label only on the lowest scatter panel of each column, so "night F"
-        # never reads into the title of the panel below it.
+        # x-label only on the lowest scatter panel of each column
         cells = []
         bottom_scatter = {}
         for i, key in enumerate(panels):
@@ -1523,10 +1260,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 placeholder=placeholder,
             )
 
-        # The first cell after the panels holds the shared sample size, so the
-        # per-panel stats boxes don't each repeat it. n is the number of paired
-        # day/night surface depth-bin medians behind every panel's statistics
-        # (the same across panels, so one figure suffices).
+        # spare cell shows the shared sample size (same n behind every panel)
         n_values = [r["n"] for r in results.values() if r]
         if n_values:
             spare = fig.add_subplot(gl[divmod(len(panels), ncols)])
@@ -1543,21 +1277,10 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
 
     def _day_night_pairs(self):
-        """List of ``(midday_profile, midnight_profile)`` numbers, nearest in time.
-
-        Faithful to the Thomalla et al. (2017) Fig. 4 comparison: only profiles
-        near solar noon (peak sun, maximum quenching) and solar midnight (no
-        quenching) are used, selected with a
-        +/-``MIDDAY_MIDNIGHT_WINDOW_HOURS`` solar-time window (see
-        :meth:`_hours_from_solar_noon`). Restricting to these extremes makes the
-        regression the demanding worst-case test the figure intends; the sample
-        size then comes from pairing per depth bin over the surface layer (see
-        :meth:`_score`), not from admitting weakly-quenched dawn/dusk profiles.
-
-        Each midday profile is paired with its nearest-in-time midnight profile.
-        Capped at ``MAX_COMPARE_PROFILES`` midday profiles (evenly sampled) so
-        the comparison stays responsive; the cap is logged when it bites.
-        """
+        # (midday, midnight) profile pairs nearest in time, Thomalla 2017 Fig. 4
+        # style: only profiles within MIDDAY_MIDNIGHT_WINDOW_HOURS of solar
+        # noon/midnight (the worst-case quenching extremes), capped at
+        # MAX_COMPARE_PROFILES for speed.
         pns = [int(pn) for pn in self.sun_args.index]
         times = {
             pn: pd.to_datetime(self.sun_args.loc[pn, "TIME"]).value for pn in pns
@@ -1588,7 +1311,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return pairs
 
     def _profile_subsets(self, profile_numbers):
-        """Map ``profile_number -> single-profile subset`` of ``self.data_copy``."""
+        # {pn: single-profile subset of data_copy}
         pnum = self.data_copy["PROFILE_NUMBER"].values
         subsets = {}
         for pn in profile_numbers:
@@ -1598,7 +1321,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return subsets
 
     def _raw_dv(self, profile_numbers, subsets):
-        """``{pn: (depth, uncorrected apply_to)}`` for the given profiles."""
+        # {pn: (depth, uncorrected apply_to)}
         out = {}
         for pn in profile_numbers:
             s = subsets.get(pn)
@@ -1607,7 +1330,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return out
 
     def _run_method_over(self, method_fn, profile_numbers, subsets):
-        """``{pn: (depth, corrected fluorescence)}`` from running ``method_fn``."""
+        # {pn: (depth, corrected fluorescence)} from running method_fn
         out = {}
         for pn in profile_numbers:
             s = subsets.get(pn)
@@ -1621,15 +1344,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return out
 
     def _score(self, day_dv, night_dv, pairs):
-        """Fit statistics for corrected-day vs night fluorescence across pairs.
-
-        Only depth bins within ``COMPARE_SURFACE_LIMIT_METRES`` of the surface
-        are scored: quenching (and hence the differences between methods) lives
-        in the near-surface layer, so including the deep bins - where every
-        method leaves the data unchanged and day already matches night - only
-        dilutes the metric.
-        """
-        # DEPTH is positive-down, so the surface window is bins with key <= this.
+        # Fit stats for corrected-day vs night fluorescence across pairs. Only the
+        # surface bins are scored (where quenching lives); deeper bins, where day
+        # already matches night, would only dilute the metric.
         max_key = int(np.floor(COMPARE_SURFACE_LIMIT_METRES / COMPARE_BIN_METRES))
         xs, ys = [], []
         for day_pn, night_pn in pairs:
@@ -1648,7 +1365,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _bin_medians(depth, values):
-        """Median ``values`` per ``COMPARE_BIN_METRES`` depth bin, keyed by bin."""
+        # median values per COMPARE_BIN_METRES depth bin, keyed by bin
         depth = np.asarray(depth, dtype=float)
         values = np.asarray(values, dtype=float)
         mask = np.isfinite(depth) & np.isfinite(values)
@@ -1660,7 +1377,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _fit_stats(xs, ys):
-        """Regression + agreement stats of ``ys`` (day) against ``xs`` (night)."""
+        # regression + agreement stats of ys (day) against xs (night)
         x = np.asarray(xs, dtype=float)
         y = np.asarray(ys, dtype=float)
         mask = np.isfinite(x) & np.isfinite(y)
@@ -1755,8 +1472,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         )
         ax.set_title(label, fontsize=8)
         ax.tick_params(labelsize=6)
-        # Only the bottom row carries the "night F" x-label (it otherwise reads
-        # into the panel below it); only the left column carries the y-label.
         if show_xlabel:
             ax.set_xlabel("night F", fontsize=6.5)
         if show_ylabel:
@@ -1777,18 +1492,13 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         self._draw_method_description(fig.add_subplot(gm[1, 0]))
 
     def _draw_method_description(self, ax):
-        """Caption (below the example profile) describing the configured method."""
         ax.axis("off")
         text = self._METHOD_DESCRIPTIONS.get(
             self.method.lower(), "No description available for this method."
         )
-        # The correction xing2018 applies depends on 'hybrid' too, so the caption
-        # has to say which way it is set.
+        # xing2018's correction also depends on 'hybrid', so note which way it's set
         if self.method.lower() == "xing2018":
             text += self._HYBRID_NOTES[bool(self.hybrid)]
-        # Reads as a plain caption for the profile above, not a boxed legend. The
-        # descriptions are pre-wrapped so the lines stay within the column and
-        # don't run into the side plots.
         ax.text(
             0.5,
             0.98,
@@ -1802,13 +1512,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             transform=ax.transAxes,
         )
 
-
     def _example_profiles(self):
-        """Pick a representative day and night profile for the configured method.
-
-        The day profile is the daytime profile the configured method changed
-        most; the night profile is the nearest-in-time nighttime profile.
-        """
+        # day profile = the one the configured method changed most; night profile
+        # = the nearest in time to it
         pnum = self.data["PROFILE_NUMBER"].values
         change = np.abs(
             self.data[self.output_as].values - self.data_copy[self.apply_to].values
@@ -1820,11 +1526,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         for pn in np.unique(pnum[np.isfinite(pnum)]):
             total_change[int(pn)] = float(np.nansum(change[np.where(pnum == pn)[0]]))
 
-        day_candidates = [p for p in total_change if elev.get(p, 0) > DAY_MIN_ELEVATION]
+        day_candidates = [p for p in total_change if elev.get(p, 0) > self.day_min_elevation]
         pool = day_candidates or list(total_change)
         day_pn = max(pool, key=lambda p: total_change[p])
 
-        night_candidates = [p for p in total_change if elev.get(p, 0) < NIGHT_MAX_ELEVATION]
+        night_candidates = [p for p in total_change if elev.get(p, 0) < self.night_max_elevation]
         if night_candidates:
             day_t = pd.to_datetime(self.sun_args.loc[day_pn, "TIME"]).value
             night_pn = min(
@@ -1862,17 +1568,15 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         ax.set_title(title, fontsize=9)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=6.5, loc="lower right", framealpha=0.9)
-        # Cap the view at 200 m and invert so the surface is at the top; the
-        # quenching layer and correction sit near the surface.
+        # cap at 200 m and invert so the surface (where quenching acts) is at top
         bottom, top = ax.get_ylim()
         ax.set_ylim(min(top, 200.0), bottom)
 
     # --- Right column: depth-time sections ----------------------------
 
     def _draw_timeseries(self, fig, subspec):
-        # A dedicated thin colourbar column so ax1/ax2 (which have colourbars)
-        # keep the same width as ax3 (which does not) - otherwise a stolen
-        # colourbar shrinks the top two and their time axes stop lining up.
+        # dedicated thin colourbar column so ax1/ax2 (with colourbars) keep the
+        # same width as ax3 (without) and their time axes stay aligned
         gr = subspec.subgridspec(
             3, 2, width_ratios=[1, 0.02], wspace=0.015, hspace=0.35
         )
@@ -1881,10 +1585,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         orig = self.data_copy[self.apply_to].values
         corr = self.data[self.output_as].values
 
-        # Keep points with a valid time/depth and a real CHLA value in the top
-        # TIMESERIES_DEPTH_LIMIT m. Rows with NaN CHLA (e.g. CTD samples on the
-        # same measurement axis) can never be corrected, so plotting them only
-        # buries the real fluorescence under grey "unchanged" points.
+        # keep only valid time/depth points with a real CHLA value in the top
+        # window (NaN-CHLA rows, e.g. CTD-only samples, would just bury the data)
         finite = (
             ~pd.isnull(time)
             & np.isfinite(depth)
@@ -1896,9 +1598,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         vmin, vmax = self._robust_vlim(orig, corr)
 
-        # Zoom the depth axis so the deepest corrected point sits about two-thirds
-        # down: e.g. a deepest QD of 20 m gives a 0-30 m window. Falls back to the
-        # full window when no profile was corrected, and never zooms out past it.
+        # zoom so the deepest corrected point sits ~two-thirds down (1.5x deepest
+        # QD), bounded to [TIMESERIES_DEPTH_MIN, TIMESERIES_DEPTH_LIMIT]
         line_qd = self._section_quenching_depths()
         finite_qd = line_qd[np.isfinite(line_qd)]
         if finite_qd.size:
@@ -1924,9 +1625,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         )
         ax2.set_title(f"Quenching-corrected fluorescence (top {depth_limit:.0f} m)", fontsize=9)
 
-        # Colour every section point by why the correction did/didn't touch it,
-        # drawing from its own (unfiltered) categorisation so NaN and not-in-
-        # profile points show too - the shared arrays above drop those.
+        # colour every section point by whether the correction touched it
         ax3 = fig.add_subplot(gr[2, 0], sharex=ax1, sharey=ax1)
         cat_time, cat_depth, cat_key = self._section_point_categories(
             depth_limit, SECTION_MAX_POINTS
@@ -1963,12 +1662,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         plt.setp(ax3.get_xticklabels(), rotation=30, ha="right")
 
     def _section_quenching_depths(self):
-        """Per-profile quenching depth (positive-down m), used to zoom the sections.
-
-        The quenching depth is the deepest point the correction actually changed
-        in each profile; ``NaN`` where undefined (night, or a profile the
-        correction left untouched). The median sets the section depth window.
-        """
+        # per-profile quenching depth (deepest changed point), used to zoom the
+        # sections; NaN where the correction touched nothing
         pnum = self.data["PROFILE_NUMBER"].values
         depth = self.data["DEPTH"].values
         orig = self.data_copy[self.apply_to].values
@@ -1985,15 +1680,9 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return np.asarray(qd)
 
     def _section_point_categories(self, depth_limit, max_points):
-        """Split every section point into 'corrected' vs 'uncorrected'.
-
-        Debug aid for the bottom section panel. Returns ``(time, depth, cat)``
-        for the plotted points - those in a profile with a finite time/depth and
-        a real CHLA value, within ``depth_limit`` and subsampled to
-        ``max_points``. ``cat`` is 'corrected' where the value actually changed
-        and 'uncorrected' otherwise (nighttime points included); NaN-CHLA rows
-        (CTD-only samples) and points not in any profile are dropped.
-        """
+        # (time, depth, cat) for the bottom section panel: in-profile points with a
+        # real CHLA value, within depth_limit, subsampled to max_points. cat is
+        # 'corrected' where the value changed, else 'uncorrected'.
         pnum = self.data["PROFILE_NUMBER"].values
         depth = self.data["DEPTH"].values
         time = self.data["TIME"].values
@@ -2003,8 +1692,6 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
         cat = np.where(changed, "corrected", "uncorrected")
 
-        # Show only in-profile points with a real value; NaN-CHLA rows (CTD-only
-        # samples) and points not in any profile are excluded from the panel.
         plot_mask = (
             ~pd.isnull(time)
             & np.isfinite(depth)
@@ -2024,7 +1711,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _robust_vlim(*arrays):
-        """2nd-98th percentile colour limits across the given arrays."""
+        # 2nd-98th percentile colour limits across the given arrays
         stacked = np.concatenate([np.asarray(a, dtype=float).ravel() for a in arrays])
         stacked = stacked[np.isfinite(stacked)]
         if stacked.size == 0:

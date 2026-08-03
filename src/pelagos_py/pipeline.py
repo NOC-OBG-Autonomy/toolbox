@@ -86,10 +86,8 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
         "%Y-%m-%d %H:%M:%S",
     )
 
-    # Console handler. Always added so logs reach the console regardless of
-    # whether a log file is configured. Compact + coloured: it strips the
-    # timestamp/level/logger prefix (that detail lives in the file handler,
-    # below), greys step detail, and coexists with live progress bars.
+    # Console handler: always added, compact + coloured, and coexists with live
+    # progress bars (the full prefix lives in the file handler below).
     logger.addHandler(make_console_handler(level))
 
     # Treat unset / explicit "none"-like values as "no log file". This catches
@@ -241,8 +239,7 @@ class Pipeline(ConfigMirrorMixin):
         ValueError
             If the step name is not recognized.
         """
-        # Step names are matched case-insensitively; store the canonical
-        # (registered) name so downstream lookups and logging are consistent.
+        # Match case-insensitively but store the canonical registered name.
         canonical_name = resolve_step_name(step_name)
         if canonical_name is None:
             available_steps = list(STEP_CLASSES.keys())
@@ -272,8 +269,8 @@ class Pipeline(ConfigMirrorMixin):
         }
 
         self.steps.append(step_config)
-        # Per-step confirmation stays in the log file; the console shows the
-        # assembly progress bar (see build_steps) instead.
+        # Per-step confirmation to the log file only; the console shows the
+        # assembly progress bar (see build_steps).
         self.logger.info(
             "Step '%s' added successfully!", step_name, extra={"console": False}
         )
@@ -315,14 +312,12 @@ class Pipeline(ConfigMirrorMixin):
         if capture:
             step_context["captured_diagnostics"] = self._captured_figures
 
-        # Position in the run, used to keep captured figure filenames unique
-        # when a config repeats a step name (e.g. several 'Apply QC' steps).
+        # Run position, keeps captured figure filenames unique when a config
+        # repeats a step name (e.g. several 'Apply QC' steps).
         step_index = getattr(self, "_step_index", 0) + 1
         self._step_index = step_index
 
         step = create_step(step_config, step_context)
-        # The console shows each step via its own log lines; the file keeps the
-        # plain "Executing:" record.
         self.logger.info("Executing: %s", step.name, extra={"console": False})
 
         # The user's own diagnostics setting drives interactive display and
@@ -330,8 +325,7 @@ class Pipeline(ConfigMirrorMixin):
         # diagnostic code path so its figures can be saved for the report,
         # without otherwise changing how the step reports performance.
         user_diagnostics = step.diagnostics
-        # True when diagnostics run only to feed the report (not user-requested),
-        # so a step can word its "generating plot" notice accordingly.
+        # True when diagnostics run only to feed the report (not user-requested).
         step._report_capture = bool(capture and not user_diagnostics)
         captured_images = []
         if capture:

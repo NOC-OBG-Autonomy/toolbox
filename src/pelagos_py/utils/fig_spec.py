@@ -14,45 +14,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""One place that fixes the look of every ``plot_diagnostics``: a 16:9 figure, one
-set of font sizes/margins, one flag/category palette, one date format. Keeping
-every step on these helpers makes the PNGs uniform *and* keeps them within what
-the dashboard's interactive (plotly/WebGL) renderer can reproduce faithfully.
+"""Single source of truth for the look of every ``plot_diagnostics``: a 16:9
+figure, one font/margin scale, one flag/category palette, one date format. Keeps
+PNGs uniform and within what the dashboard's interactive (WebGL) renderer can
+reproduce.
 
-WebGL-safe rules (this module is the source of truth):
-  * Draw data with ``ax.plot(..., ls="", marker="o")`` or ``ax.scatter``.
-    Both round-trip; ``plot`` markers are faster and give one clean legend
-    entry per call -- prefer them.
-  * Colour by DISCRETE category: one call per category, each a single colour
-    with a label. Never continuous colour + ``fig.colorbar`` -- the colorbar is
-    a second axes the serialiser can't read, and it drops the WHOLE figure to
-    PNG-only (this is why MLD/salinity/bbp are not interactive today).
-  * ``axhline``/``axvline`` are fine (drawn as spanning reference lines).
-  * NOT reproducible in WebGL -> figure stays PNG-only, but still style it:
-    hist, bar, fill_between, pcolormesh, contourf, imshow, fig.colorbar, twinx,
-    cartopy/polar projections, LineCollection.
-  * Multi-panel: build with plt.subplots(nrows, ncols). The interactive view
-    stacks every axes vertically in creation order and links a shared x-axis,
-    so make time-series stacks with sharex=True and create axes in reading order.
+WebGL-safe rules:
+  * Draw data with ``ax.plot(..., ls="", marker="o")`` (preferred, faster) or
+    ``ax.scatter``; both round-trip. ``axhline``/``axvline`` are fine.
+  * Colour by DISCRETE category (one call per category). Continuous colour +
+    ``fig.colorbar`` adds a second axes the serialiser can't read and drops the
+    WHOLE figure to PNG-only (as with MLD/salinity/bbp).
+  * PNG-only (not reproducible), but still style them: hist, bar, fill_between,
+    pcolormesh, contourf, imshow, fig.colorbar, twinx, cartopy/polar, LineCollection.
+  * Multi-panel: build with plt.subplots; the interactive view stacks axes
+    vertically in creation order with a shared x-axis, so use sharex=True.
 """
 
 import matplotlib.dates as mdates
 import numpy as np
 
-# ---- Geometry: a fixed-width canvas. A single panel is 16:9; stacked panels
-# keep the width and grow the height by ROW_H per row so they stay readable. ----
+# Geometry: single panel is 16:9; multi-panel keeps width, grows height by ROW_H/row.
 FIG_W, FIG_H, DPI = 10, 5.625, 130
 ROW_H = 3.0  # inches per panel for multi-panel (nrows > 1) figures
 
-# ---- Type: one scale everywhere. ----
 FS_SUPTITLE, FS_TITLE, FS_LABEL, FS_TICK, FS_LEGEND = 12, 11, 9, 8, 8
 
-# ---- Marks. ----
 MARKER = 4            # markersize for plot() point series
 ALPHA = 0.7
 RASTER_ABOVE = 5000   # rasterize dense point layers above this many points
 
-# ---- Colours (hex, one mapping used everywhere). ----
+# Colours (hex, one mapping used everywhere).
 FLAG_COLOURS = {
     0: "#9aa5ad", 1: "#1f6fd6", 2: "#7fb2e5", 3: "#e8912b", 4: "#d6392f",
     5: "#9aa5ad", 6: "#9aa5ad", 7: "#9aa5ad", 8: "#17b6c4", 9: "#111111",
@@ -61,7 +53,7 @@ FLAGGED = "#b2bec3"
 CATEGORY = ["#00b894", "#0984e3", "#d63031", "#fdcb6e", "#6c5ce7",
             "#e84393", "#00cec9", "#e17055"]
 
-# ---- QC flag meanings, used to label flag legend entries as "1 (good)". ----
+# QC flag meanings, used to label flag legend entries as "1 (good)".
 FLAG_MEANINGS = {
     0: "no QC", 1: "good", 2: "prob good", 3: "prob bad", 4: "bad",
     5: "changed", 8: "interp", 9: "missing",
@@ -77,12 +69,8 @@ def flag_label(flag):
 def new_fig(nrows=1, ncols=1, sharex=False, sharey=False, height_ratios=None):
     """A standard figure + axes at the standard width/dpi. Axes always 2D: axes[r][c].
 
-    A single panel is 16:9; stacked panels (nrows > 1) keep the width and grow
-    the height by ``ROW_H`` per row so each panel stays readable.
-
-    height_ratios: optional relative row heights, e.g. ``(3, 1)`` for a tall main
-    panel over a short one. Sets the figure's gridspec; the dashboard reproduces
-    the ratio in its interactive view from each axes' drawn height.
+    Single panel is 16:9; multi-panel grows height by ``ROW_H`` per row.
+    ``height_ratios`` (e.g. ``(3, 1)``) sets unequal row heights via gridspec.
     """
     import matplotlib.pyplot as plt
     height = FIG_H if nrows == 1 else ROW_H * nrows

@@ -198,8 +198,6 @@ def test_qc_outputs_include_companions():
 
 
 def test_flag_instead_flags_companion_without_flagging_the_source():
-    """CHLA is flagged by DEPTH's bands (3 in the top 5 m, 2 below) and DEPTH is left
-    out of the outputs entirely."""
     data = make_data(DEPTH=[2.0, 50.0], CHLA=[0.5, 0.5])
     qc = range_qc(
         data,
@@ -214,7 +212,6 @@ def test_flag_instead_flags_companion_without_flagging_the_source():
 
 
 def test_flag_instead_merges_rather_than_overwrites_a_tested_companion():
-    """A propagated probably-good (2) cannot downgrade a companion's own bad (4)."""
     data = make_data(DEPTH=[50.0, 50.0], CHLA=[0.5, 200.0])  # second CHLA is out of range
     qc = range_qc(
         data,

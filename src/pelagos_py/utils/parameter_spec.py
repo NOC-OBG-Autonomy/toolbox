@@ -152,10 +152,8 @@ def type_errors(schema: dict, params: dict) -> list[str]:
 def option_errors(schema: dict, params: dict) -> list[str]:
     """Return ``"name (expected one of ..., got ...)"`` for out-of-``options`` params.
 
-    Only user-supplied values whose spec declares an ``options`` list are checked;
-    omitted parameters (trusted defaults) and specs without ``options`` are out of
-    scope. For a list-valued parameter ``options`` constrains each *element*, so
-    every supplied element must be one of them.
+    Only supplied params whose spec declares ``options`` are checked. For a
+    list-valued param ``options`` constrains each element.
     """
     errors = []
     for name, spec in schema.items():

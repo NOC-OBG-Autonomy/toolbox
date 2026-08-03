@@ -28,10 +28,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-# Maps the user-facing ``method`` choice to the dataset variables it reads. Density
-# is derived here as potential density rather than read from DENSITY: that variable
-# is in-situ, and its pressure term alone crosses the threshold within a few metres
-# of the reference depth, so it cannot place a mixed layer.
+# Dataset variables each method reads; density is derived here as potential density.
 METHOD_INPUTS = {"density": ["ABS_SALINITY", "CONS_TEMP"], "temp": ["TEMP"]}
 
 # Name each method's values go by in logs and on plots.
@@ -43,51 +40,35 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
     """
     Calculate the mixed layer depth (MLD) of each profile.
 
-    The MLD is found per profile by a threshold method: starting from a
-    near-surface reference point, the first depth at which the chosen variable
-    departs from its reference value by more than a threshold marks the base of
-    the mixed layer. Because a depth (in metres) is wanted, the step keys off
-    ``DEPTH`` and requires that both ``PROFILE_NUMBER`` and ``DEPTH`` have already
-    been derived.
+    The MLD is found per profile by a threshold method: from a near-surface
+    reference point, the first depth at which the chosen variable departs from its
+    reference value by more than a threshold marks the base of the mixed layer.
+    ``PROFILE_NUMBER`` and ``DEPTH`` must already be derived.
 
-    Two derived variables are written, both on the ``N_MEASUREMENTS`` dimension:
-
-    - ``MLD`` — the mixed layer depth of the profile each measurement belongs to,
-      in the same positive-down convention as ``DEPTH`` (e.g. ``25.0`` m). It is
-      ``NaN`` for measurements not in a profile, or in a profile for which no MLD
-      could be found.
-    - ``MLD_BOOL`` — ``0`` where the measurement is above the MLD (shallower),
-      ``1`` where it is at or below the MLD (deeper), and ``NaN`` where the MLD is
-      undefined for that measurement.
-
-    Samples whose flags fall in ``calculation_flag_filter`` (by default
-    probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) take no
-    part in the search above, so a bad value cannot place the MLD; for the density
-    method this keys off the flags of the inputs density is derived from. Both
-    derived variables are still written for every measurement in the profile.
+    Two derived variables are written on the ``N_MEASUREMENTS`` dimension: ``MLD``,
+    the profile's mixed layer depth (positive down, matching ``DEPTH``; ``NaN`` where
+    undefined), and ``MLD_BOOL``, ``0`` above the MLD, ``1`` at/below it, ``NaN``
+    where undefined. Samples whose flags fall in ``calculation_flag_filter`` take no
+    part in the search, so a bad value cannot place the MLD; both variables are still
+    written for every measurement in the profile.
 
     The density method uses potential density (sigma0, referenced to 0 dbar) derived
-    within this step, not the dataset's ``DENSITY``: that variable is in-situ, and its
-    pressure term alone crosses a typical threshold within a few metres of the
-    reference depth. The derived sigma0 is not written to the dataset.
+    here from ``ABS_SALINITY`` and ``CONS_TEMP``, not the dataset's in-situ
+    ``DENSITY`` whose pressure term alone crosses a typical threshold within a few
+    metres of the surface. The derived sigma0 is not written to the dataset.
 
     Parameters
     ----------
     method : str, optional
-        Values the threshold is applied to: ``"density"`` (potential density,
-        derived here from ``ABS_SALINITY`` and ``CONS_TEMP``) or ``"temp"``
-        (``TEMP``). Default ``"auto"`` uses density if its inputs are present,
-        otherwise falls back to temp. An explicit choice whose inputs are missing
-        halts the pipeline.
+        ``"density"``, ``"temp"``, or ``"auto"`` (default; density if its inputs are
+        present, else temp). An explicit choice whose inputs are missing halts the
+        pipeline.
     reference_depth : float, optional
-        Near-surface reference depth (positive down). The reference value is taken
-        at the shallowest measurement at or below this depth. Default ``10``.
+        Near-surface reference depth (positive down). Default ``10``.
     density_threshold : float, optional
-        Density departure (kg/m3) from the reference marking the MLD, used when the
-        method resolves to density. Default ``0.03``.
+        Density departure (kg/m3) marking the MLD. Default ``0.03``.
     temp_threshold : float, optional
-        Temperature departure (degC) from the reference marking the MLD, used when
-        the method resolves to temperature. Default ``0.2``.
+        Temperature departure (degC) marking the MLD. Default ``0.2``.
 
     Examples
     --------
@@ -134,8 +115,6 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
     def run(self):
         self.filter_qc()
 
-        # Resolve which values the threshold keys off, honouring the density ->
-        # temp fallback when method is "auto".
         self.resolved_method, self.threshold = self._resolve_method()
         self.log(
             f"Calculating MLD from {METHOD_LABELS[self.resolved_method]} "
@@ -145,8 +124,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         depth = self.data["DEPTH"].values
         mld = self._compute_mld(self.resolved_method, self.threshold, progress=True)
 
-        # Above the MLD (shallower) -> 0, at/below (deeper) -> 1, NaN where either
-        # the depth or the profile's MLD is undefined.
+        # Above MLD -> 0, at/below -> 1, NaN where depth or the profile's MLD is undefined.
         mld_bool = np.where(depth >= mld, 1.0, 0.0)
         mld_bool[np.isnan(depth) | np.isnan(mld)] = np.nan
 
@@ -184,11 +162,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         return self.context
 
     def _resolve_method(self):
-        """Return ``(method, threshold)`` for the configured method.
-
-        ``"auto"`` prefers density and falls back to temp. An explicit method whose
-        inputs are absent halts the pipeline.
-        """
+        # Returns (method, threshold); "auto" prefers density, falls back to temp.
         method = str(self.method).lower()
 
         if method == "auto":
@@ -224,16 +198,10 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         return method, threshold
 
     def _method_available(self, method):
-        """True where every dataset variable a method reads is present."""
         return all(var in self.data.data_vars for var in METHOD_INPUTS[method])
 
     def _method_values(self, method):
-        """Return the values a method applies its threshold to.
-
-        Density is potential density (sigma0, referenced to 0 dbar) derived here from
-        ABS_SALINITY and CONS_TEMP; it is used only to place the MLD and is not
-        written to the dataset.
-        """
+        # Density is potential density (sigma0) derived here, only to place the MLD.
         if method == "temp":
             return self.data["TEMP"].values
         return gsw.sigma0(
@@ -241,18 +209,11 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         )
 
     def _compute_mld(self, method, threshold, progress=False):
-        """Return the per-measurement MLD array for one method.
-
-        Every measurement in a profile carries that profile's MLD; measurements
-        outside a profile, or in a profile with no MLD, are ``NaN``.
-        """
         profile_number = self.data["PROFILE_NUMBER"].values
         depth = self.data["DEPTH"].values
 
-        # Flagged samples must not influence where the MLD sits, so the search below
-        # runs on NaN-masked copies. For density this gates on the flags of the inputs
-        # sigma0 is derived from. MLD/MLD_BOOL are still assigned to every sample in
-        # the profile, using the unmasked depth.
+        # Flagged samples must not influence the MLD, so the search runs on NaN-masked
+        # copies; MLD/MLD_BOOL are still assigned to every sample using unmasked depth.
         usable = self.calculation_mask(
             ["PROFILE_NUMBER", "DEPTH"] + METHOD_INPUTS[method]
         )
@@ -274,12 +235,6 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         return mld
 
     def _profile_mld(self, depth, values, threshold):
-        """Return the MLD (positive-down metres) for one profile, or ``NaN``.
-
-        Starting from the shallowest measurement at or below ``reference_depth``,
-        the MLD is the shallowest depth whose value departs from that reference by
-        at least ``threshold``.
-        """
         # Restrict to valid points at or below the reference depth.
         below_reference = depth >= self.reference_depth
         valid = below_reference & ~np.isnan(depth) & ~np.isnan(values)
@@ -288,9 +243,8 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         if depth.size == 0:
             return np.nan
 
-        # Reference point: the shallowest remaining measurement (smallest DEPTH).
-        # If it is deeper than twice the reference depth there is no data near the
-        # surface to anchor to, so no MLD can be found.
+        # Reference point: shallowest remaining measurement; if deeper than twice the
+        # reference depth there is nothing near the surface to anchor to.
         reference_index = np.argmin(depth)
         if depth[reference_index] > 2 * self.reference_depth:
             return np.nan
@@ -310,13 +264,8 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
     DIAGNOSTIC_MAX_DEPTH = 200
 
     def _profile_spans(self, profile_number, x):
-        """Return ``(indices, [x_start, x_end])`` per profile, for drawing MLD lines.
-
-        PROFILE_NUMBER is extended over the transects either side of a profile's
-        ascent/descent core, so the line is spanned over the core alone (marked by
-        PROFILE_DIRECTION +-1) where that variable is available — spanning the whole
-        profile would stretch it across its transect legs.
-        """
+        # (indices, [x_start, x_end]) per profile; span the core (PROFILE_DIRECTION
+        # +-1) where available so MLD lines don't stretch across transect legs.
         direction = (
             self.data["PROFILE_DIRECTION"].values
             if "PROFILE_DIRECTION" in self.data
@@ -338,8 +287,6 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         return spans
 
     def generate_diagnostics(self):
-        """Plot the top 200 m of the depth time series, one panel per available
-        threshold variable, each overlaid with the MLD from every method."""
         matplotlib.use("tkagg")
 
         profile_number = self.data["PROFILE_NUMBER"].values
@@ -353,8 +300,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
 
         profile_spans = self._profile_spans(profile_number, x)
 
-        # Both MLDs are drawn on every panel so the unselected method can be compared
-        # against the selected one; only the selected one is stored in the dataset.
+        # Both MLDs are drawn on every panel for comparison; only the selected one is stored.
         methods = [
             (method, colour)
             for method, colour in self.DIAGNOSTIC_METHODS
@@ -380,8 +326,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
             panel_label = METHOD_LABELS[method]
             values = self._method_values(method)
 
-            # Flagged samples are kept off the scatter so they cannot stretch the
-            # colourbar, as are points below the plotted depth range.
+            # Flagged samples and points below the plotted range are kept off the scatter.
             usable = self.calculation_mask(["DEPTH"] + METHOD_INPUTS[method])
             valid = (
                 usable

@@ -16,36 +16,9 @@
 
 """Derive per-profile light depths (euphotic depth and an iPAR isolume) from PAR.
 
-Downstream quenching corrections need two per-profile depth *scalars* from the
-downwelling PAR profile:
-
-- ``ZEU`` — the euphotic depth (1% light level), a property of the water's
-  diffuse attenuation Kd.
-- ``Z_IPAR`` — the depth at which downwelling iPAR falls to ``ipar_level``
-  (default 15 umol m-2 s-1), the isolume used by the Xing (2018) / Terrats
-  (2020) mixing-regime test.
-
-PAR is often logged on only one cast direction, so many profiles carry no
-irradiance. Rather than reconstruct the whole PAR field, this step computes the
-two scalars on the profiles that *do* have usable PAR and, optionally,
-interpolates each scalar across the remaining profiles in time. Interpolating a
-scalar is cheaper and steadier than filling the whole profile, and the scalars
-are exactly what the corrections consume.
-
-Each scalar is independently toggleable:
-
-- ``compute_*`` chooses whether the scalar is produced at all.
-- ``interpolate_*`` chooses what happens to profiles without usable PAR: when
-  on, the scalar is interpolated in time onto every profile; when off, only
-  profiles with usable PAR carry the scalar and the rest stay ``NaN``.
-
-Both outputs are written on ``N_MEASUREMENTS`` with the profile's scalar
-broadcast across its measurements (as the Mixed Layer Depth step does for
-``MLD``), so a step reading them per profile just reads any of its samples.
-
-Note on ``Z_IPAR``: the isolume depth depends on surface brightness, so
-interpolating it between casts taken at different times of day mixes the diurnal
-cycle into the estimate. ``ZEU`` (a Kd property) does not have this issue.
+Computes two per-profile depth scalars from the downwelling PAR profile for
+downstream quenching corrections, optionally interpolating each in time onto
+profiles without usable PAR. See :class:`InterpolatePAR` for details.
 """
 
 #### Mandatory imports ####
@@ -61,24 +34,10 @@ from pelagos_py.utils import fig_spec
 
 
 def estimate_euphotic_depth(par, depth):
-    """Estimate the euphotic depth (Zeu) from a downwelling PAR profile.
+    """Euphotic depth (1% light) from a log-linear Beer-Lambert fit of PAR vs depth.
 
-    Fits ``ln(PAR)`` against depth over the profile (Beer-Lambert exponential
-    attenuation) and takes Zeu as the 1% light level, ``Zeu = ln(100) / Kd``.
-
-    Parameters
-    ----------
-    par : array-like
-        Downwelling PAR profile (positive values only are used).
-    depth : array-like
-        Depth (metres, positive down) at each PAR value.
-
-    Returns
-    -------
-    float
-        Euphotic depth (metres, positive down), or ``NaN`` when the fit is
-        invalid (fewer than 4 valid points, non-physical slope, or Zeu beyond
-        the ~186 m clear-water limit of Morel & Maritorena 2001).
+    Returns metres positive down, or ``NaN`` when the fit is invalid (fewer than
+    4 valid points, non-physical slope, or beyond the ~186 m clear-water limit).
     """
     from scipy.stats import linregress
 
@@ -171,9 +130,8 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
     """
 
     step_name = "Interpolate PAR"
-    # DOWNWELLING_PAR is file-native and validated at run time in run(), not
-    # listed here — the pipeline's pre-run check only understands standard and
-    # step-produced variables, so listing a file-native one falsely fails it.
+    # DOWNWELLING_PAR is file-native, so it is validated in run() rather than by
+    # the pipeline pre-run check (which only knows standard/step-produced vars).
     required_variables = ["PROFILE_NUMBER", "TIME", "DEPTH"]
     provided_variables = ["ZEU", "Z_IPAR"]
 
@@ -239,8 +197,7 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
             self.context["data"] = self.data
             return self.context
 
-        # Flagged PAR/depth samples must not inform a scalar, so NaN them out of
-        # the profile fits (calculation_flag_filter, as in the other steps).
+        # Flagged PAR/depth samples must not inform a scalar, so NaN them out.
         usable = self.calculation_mask([par_var, depth_var])
         par = np.where(usable, np.asarray(self.data[par_var].values, dtype=float), np.nan)
         depth = np.asarray(self.data[depth_var].values, dtype=float)
@@ -289,7 +246,7 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
         self, name, calc, prof, profiles, prof_tsec, interpolate, *, long_name,
         extra_attrs=None,
     ):
-        """Interpolate (optionally), broadcast to N_MEASUREMENTS and write ``name``."""
+        # Interpolate (optionally), broadcast to N_MEASUREMENTS and write `name`.
         final = self._interpolate_scalar(calc, profiles, prof_tsec) if interpolate else dict(calc)
 
         n_calc = sum(np.isfinite(v) for v in calc.values())
@@ -317,11 +274,8 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _interpolate_scalar(calc, profiles, prof_tsec):
-        """Fill NaN profiles by interpolating the scalar in time (no extrapolation).
-
-        Profiles outside the span bracketed by the computed profiles keep ``NaN``
-        rather than flat-extrapolate a light depth past the last real estimate.
-        """
+        # Fill NaN profiles by interpolating in time; no extrapolation beyond the
+        # span bracketed by computed profiles (those stay NaN).
         order = sorted(profiles, key=lambda p: (prof_tsec[p] if np.isfinite(prof_tsec[p]) else np.inf))
         times = np.array([prof_tsec[p] for p in order], dtype=float)
         vals = np.array([calc.get(p, np.nan) for p in order], dtype=float)
@@ -336,12 +290,7 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
         return {p: float(interp[i]) for i, p in enumerate(order)}
 
     def generate_diagnostics(self):
-        """Per-scalar timeseries: computed profiles vs interpolated fills.
-
-        One panel per produced scalar, depth (positive down) increasing downward
-        so shallower light depths sit at the top, over profile time. Computed
-        profiles and interpolated fills are drawn as separate series.
-        """
+        # One panel per scalar: computed profiles vs interpolated fills over time.
         matplotlib.use("tkagg")
 
         names = [n for n in ("Z_IPAR", "ZEU") if n in self._diag]

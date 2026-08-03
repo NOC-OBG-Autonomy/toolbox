@@ -1,6 +1,5 @@
 """Tests the step 'Deep Correction' (src/pelagos_py/steps/processing/deep_correction.py)."""
 
-#   Test module import
 from pelagos_py.steps.processing import deep_correction
 
 import logging
@@ -15,11 +14,7 @@ MIN_DEEP_THRESHOLD = deep_correction.MIN_DEEP_THRESHOLD
 def make_context(
     dark=0.7, n_profiles=6, max_pres=1000.0, bloom=3.0, seed=0, var="CHLA", extra=None
 ):
-    """Build a minimal pipeline context of synthetic profiles.
-
-    Each profile is a near-surface bloom on top of a constant deep ``dark``
-    offset, so the correct dark value is known.
-    """
+    # Each profile is a near-surface bloom on a constant deep `dark` offset, so the correct dark value is known.
     rng = np.random.default_rng(seed)
     pid, pres, vals = [], [], []
     for p in range(n_profiles):
@@ -55,7 +50,6 @@ def make_step(parameters, context, diagnostics=False):
 
 
 def test_computes_dark_value_and_creates_adjusted():
-    """The dark value is recovered and written to an _ADJUSTED companion + QC."""
     ctx = make_context(dark=0.7)
     step = make_step({"apply_to": "CHLA"}, ctx)
 
@@ -75,10 +69,7 @@ def test_computes_dark_value_and_creates_adjusted():
 
 
 def _corrupt_deep(data, profiles):
-    """Wreck the deep, signal-free region of ``profiles`` and flag it bad (4).
-
-    Returns the boolean mask of the corrupted samples.
-    """
+    # Wreck the deep, signal-free region of `profiles`, flag it bad (4), return the corrupted mask.
     bad = np.isin(data["PROFILE_NUMBER"].values, profiles) & (data["PRES"].values > 950)
     assert bad.any()
     data["CHLA"].values[bad] = -20.0
@@ -87,20 +78,16 @@ def _corrupt_deep(data, profiles):
 
 
 def test_flagged_values_are_excluded_from_the_dark_value_but_still_corrected():
-    """Bad deep values must not drag the dark value, yet must still be corrected."""
     ctx = make_context(dark=0.7)
     data = ctx["data"]
 
-    # Corrupt the deep, signal-free region of most profiles and flag it bad (4).
-    # The dark value is a median of per-profile minima, so the corruption has to
-    # outnumber the clean profiles for its exclusion to be observable at all.
+    # The dark value is a median of per-profile minima, so the corruption must outnumber the clean profiles to be observable.
     bad = _corrupt_deep(data, profiles=(0, 1, 2, 3))
 
     step = make_step({"apply_to": "CHLA"}, ctx)
     out = step.run()
 
-    # The dark value comes from the two clean profiles; the -20 values would
-    # otherwise supply four profile minima and take over the median.
+    # The dark value comes from the two clean profiles; the -20 values would otherwise supply four minima and take over the median.
     assert step.dark_value == pytest.approx(0.7, abs=0.1)
     # Every sample is still corrected, flagged ones included.
     assert np.allclose(
@@ -112,7 +99,6 @@ def test_flagged_values_are_excluded_from_the_dark_value_but_still_corrected():
 
 
 def test_calculation_flag_filter_can_be_overridden():
-    """An empty calculation_flag_filter opts out, letting flagged data back in."""
     ctx = make_context(dark=0.7)
     _corrupt_deep(ctx["data"], profiles=(0, 1, 2, 3))
 
@@ -122,13 +108,11 @@ def test_calculation_flag_filter_can_be_overridden():
     )
     step.run()
 
-    # With nothing excluded the corrupted profiles supply four -20 minima, which
-    # take over the median and wreck the dark value.
+    # With nothing excluded the corrupted profiles supply four -20 minima, which take over the median and wreck the dark value.
     assert step.dark_value == pytest.approx(-20.0, abs=0.5)
 
 
 def test_uses_config_dark_value_directly():
-    """A dark_value from config is subtracted as-is, with no estimation."""
     ctx = make_context(dark=0.7)
     step = make_step({"apply_to": "CHLA", "dark_value": 0.5}, ctx)
 
@@ -143,7 +127,6 @@ def test_uses_config_dark_value_directly():
 
 
 def test_existing_adjusted_is_corrected_in_place():
-    """When _ADJUSTED already exists it is used as the input and edited in place."""
     ctx = make_context(dark=0.7)
     # Seed an existing adjusted variable (+ its QC) to be picked up.
     ctx["data"]["CHLA_ADJUSTED"] = ctx["data"]["CHLA"].copy()
@@ -159,7 +142,6 @@ def test_existing_adjusted_is_corrected_in_place():
 
 
 def test_configurable_depth_var():
-    """A different vertical coordinate (here DEPTH, deeper = larger) is honoured."""
     ctx = make_context(dark=0.7)
     # Mirror PRES into a DEPTH variable so the deep threshold can key off it.
     ctx["data"]["DEPTH"] = ctx["data"]["PRES"].copy()
@@ -171,7 +153,6 @@ def test_configurable_depth_var():
 
 
 def test_warns_when_threshold_too_shallow(caplog):
-    """A depth_threshold below MIN_DEEP_THRESHOLD warns the user."""
     ctx = make_context(dark=0.7)
     step = make_step({"apply_to": "CHLA", "depth_threshold": 200}, ctx)
 
@@ -183,7 +164,6 @@ def test_warns_when_threshold_too_shallow(caplog):
 
 
 def test_no_warning_at_default_threshold(caplog):
-    """The default (deep) threshold does not trigger the shallow-depth warning."""
     ctx = make_context(dark=0.7)
     step = make_step({"apply_to": "CHLA"}, ctx)
 
@@ -194,7 +174,6 @@ def test_no_warning_at_default_threshold(caplog):
 
 
 def test_raises_when_no_profiles_reach_threshold():
-    """No profile reaching past the threshold is a clear, actionable error."""
     ctx = make_context(dark=0.7, max_pres=500.0)  # never exceeds the 950 default
     step = make_step({"apply_to": "CHLA"}, ctx)
 
@@ -203,7 +182,6 @@ def test_raises_when_no_profiles_reach_threshold():
 
 
 def test_raises_when_apply_to_missing():
-    """Requesting a variable absent from the dataset raises a clear error."""
     ctx = make_context(dark=0.7)
     step = make_step({"apply_to": "TEMP"}, ctx)
 
@@ -212,11 +190,9 @@ def test_raises_when_apply_to_missing():
 
 
 def test_sparse_deep_profile_is_skipped_not_selected():
-    """A profile that reaches deep but has no data there is skipped, not plotted."""
     ctx = make_context(dark=0.7, n_profiles=6)
     ds = ctx["data"]
-    # Blank the deep values of profile 0 (still reaches past the threshold, but
-    # carries no data there) so it must be skipped in favour of a later profile.
+    # Blank profile 0's deep values (still reaches past the threshold but has no data there) so it must be skipped for a later profile.
     deep_of_zero = (ds["PROFILE_NUMBER"] == 0) & (ds["PRES"] > 950)
     ds["CHLA"] = ds["CHLA"].where(~deep_of_zero)
 
@@ -229,7 +205,6 @@ def test_sparse_deep_profile_is_skipped_not_selected():
 
 
 def test_raises_when_too_few_valid_deep_points():
-    """A profile lacking enough valid deep points cannot contribute a minimum."""
     ctx = make_context(dark=0.7)
     # min_valid_points impossibly high => no profile qualifies.
     step = make_step({"apply_to": "CHLA", "min_valid_points": 10_000}, ctx)

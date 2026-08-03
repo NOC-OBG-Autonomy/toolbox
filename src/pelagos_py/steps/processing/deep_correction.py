@@ -32,12 +32,10 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import pelagos_py.utils.palettes as palettes
 
-#: Shallowest depth still treated as a plausible "deep", signal-free region; a
-#: ``depth_threshold`` below this warns the user (see ``compute_dark_value``).
+# A depth_threshold shallower than this warns the user.
 MIN_DEEP_THRESHOLD = 300
 
-#: Cap on points scattered in the full-record diagnostic panel; a larger record
-#: is randomly downsampled to this many so the plot stays quick and legible.
+# Full-record diagnostic panel is downsampled to this many points.
 MAX_DIAGNOSTIC_POINTS = 10_000
 
 
@@ -46,12 +44,10 @@ class deep_correction(BaseStep, QCHandlingMixin):
     """
     Subtract a deep dark offset from a profile variable.
 
-    Many sensors read a small, roughly constant baseline where the true signal
-    should be zero — for example chlorophyll fluorescence in deep, dark water.
-    This step estimates that baseline (the *dark value*) from the deepest
+    Estimates a roughly-constant baseline (the *dark value*) from the deepest
     measurements and subtracts it from the whole record, writing the result to
-    an ``_ADJUSTED`` companion variable. It is written for chlorophyll but works
-    for any variable with a deep, signal-free region.
+    an ``_ADJUSTED`` companion variable. Written for chlorophyll but works for
+    any variable with a deep, signal-free region.
 
     The dark value is estimated as follows:
 
@@ -68,28 +64,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
     5. Use the median of those per-profile minima as the dark value.
 
     A ``dark_value`` supplied via config skips this estimation and is subtracted
-    directly.
-
-    Samples whose flags fall in ``calculation_flag_filter`` (by default
-    probably-bad (3), bad (4) and missing (9); see ``qc_handling_settings``) are
-    left out of the estimate above, but the dark value is still subtracted from
-    them — they just cannot bias it.
-
-    Parameters
-    ----------
-    name : str
-        Name identifier for this step instance.
-    parameters : dict, optional
-        Configuration parameters for the correction (see ``parameter_schema``).
-    diagnostics : bool, optional
-        Whether to generate diagnostic visualizations. Default is False.
-    context : dict, optional
-        Processing context dictionary.
-
-    Attributes
-    ----------
-    step_name : str
-        Identifier for this processing step. Set to "Deep Correction".
+    directly. Samples whose flags fall in ``calculation_flag_filter`` are left
+    out of the estimate but still corrected — they just cannot bias it.
 
     Examples
     --------
@@ -162,8 +138,6 @@ class deep_correction(BaseStep, QCHandlingMixin):
         self.apply_to, self.output_as = self.resolve_variables()
 
         self.compute_dark_value()
-        # The one line this step shows on the console; the rest of its detail
-        # (how the value was derived) stays in the log file.
         self.log(
             f"Dark correction value for {self.apply_to} = {self.dark_value:.6f}"
         )
@@ -172,8 +146,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
         self.reconstruct_data()
         self.update_qc()
 
-        # Generate new QC if a non-adjusted variable was used in processing (this
-        # causes an _ADJUSTED variable to be added).
+        # Adding an _ADJUSTED variable needs its own QC.
         if self.apply_to != self.output_as:
             self.generate_qc({f"{self.output_as}_QC": [f"{self.apply_to}_QC"]})
 
@@ -184,9 +157,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
         return self.context
 
     def resolve_variables(self):
-        # OG1 convention: processing a raw variable produces an _ADJUSTED
-        # companion, and an existing _ADJUSTED variable is preferred as the
-        # input and edited in place.
+        # OG1 convention: prefer an existing _ADJUSTED variable as input, else
+        # produce one.
         apply_to = self.apply_to
         if apply_to not in self.data.data_vars:
             raise KeyError(
@@ -207,11 +179,9 @@ class deep_correction(BaseStep, QCHandlingMixin):
         return apply_to, output_as
 
     def compute_dark_value(self):
-        # Per-profile diagnostics for plotting; left empty when dark_value is
-        # supplied via config (no estimation needed).
+        # Per-profile diagnostics for plotting; empty when dark_value is given.
         self._profile_diagnostics = {}
 
-        # A dark value supplied via config short-circuits the computation.
         if self.dark_value is not None:
             self.log(f"Using dark value from config: {self.dark_value}", console=False)
             return
@@ -238,16 +208,14 @@ class deep_correction(BaseStep, QCHandlingMixin):
 
         df = self.data[["PROFILE_NUMBER", depth, var]].to_pandas()
 
-        # Flagged samples must not inform the dark value, but must still be
-        # corrected by it, so they are dropped here rather than from self.data.
+        # Flagged samples must not inform the dark value, but are still corrected
+        # by it, so drop them here rather than from self.data.
         df.loc[~self.calculation_mask(["PROFILE_NUMBER", depth, var]), var] = np.nan
 
         df = df.dropna(subset=["PROFILE_NUMBER", depth])
 
-        # Profiles reaching past the threshold, in order of occurrence. Reaching
-        # deep is necessary but not sufficient — a profile can dip past the
-        # threshold yet carry no (or too little) data there, so we qualify each
-        # candidate on point coverage below before it spends an n_profiles slot.
+        # Profiles reaching past the threshold, in order of occurrence; coverage
+        # is checked below before a candidate spends an n_profiles slot.
         deep_reach = df.groupby("PROFILE_NUMBER")[depth].max()
         candidates = deep_reach[deep_reach > self.depth_threshold].index.to_numpy()
         if len(candidates) == 0:
@@ -263,9 +231,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 break
             profile = df[df["PROFILE_NUMBER"] == profile_number].sort_values(depth)
 
-            # Require enough points overall and enough below the threshold, so a
-            # sparse/empty deep profile is skipped rather than plotted and left
-            # unable to contribute.
+            # Skip sparse/empty deep profiles.
             n_points = int(profile[var].notna().sum())
             below = profile[profile[depth] > self.depth_threshold]
             n_deep_points = int(below[var].notna().sum())
@@ -327,14 +293,12 @@ class deep_correction(BaseStep, QCHandlingMixin):
         )
 
     def apply_dark_correction(self):
-        # Subtract the dark value to create the corrected variable.
         self.data[self.output_as] = xr.DataArray(
             self.data[self.apply_to] - self.dark_value,
             dims=self.data[self.apply_to].dims,
             coords=self.data[self.apply_to].coords,
         )
 
-        # Copy and update attributes
         if hasattr(self.data[self.apply_to], "attrs"):
             self.data[self.output_as].attrs = self.data[self.apply_to].attrs.copy()
         self.data[self.output_as].attrs[
@@ -343,23 +307,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
         self.data[self.output_as].attrs["dark_value"] = self.dark_value
 
     def generate_diagnostics(self):
-        """
-        Plot the deep correction as a two-panel figure.
-
-        **Left** — the deep profiles used for the estimate, each shown as its
-        raw (faint) and rolling-median-smoothed (bold) trace against depth, with
-        the sampled per-profile minimum marked. The depth threshold and the
-        resulting dark value are drawn as reference lines, so a biofouled or
-        otherwise invalid profile is easy to spot. A zoomed inset in the
-        bottom-right shows just the below-threshold points that drive the
-        estimate.
-
-        **Right** — the whole ``apply_to`` record against depth: the raw values
-        in grey and the corrected values coloured by their corrected value. The
-        record is randomly downsampled to ``MAX_DIAGNOSTIC_POINTS`` if larger,
-        so the shift produced by the dark-value subtraction is visible across
-        the full profile envelope rather than just the deep points used.
-        """
+        # Two-panel figure: deep profiles used for the estimate (left) and the
+        # whole record raw vs corrected (right).
         mpl.use("tkagg")
 
         if not self._profile_diagnostics:
@@ -412,8 +361,6 @@ class deep_correction(BaseStep, QCHandlingMixin):
         ax_prof.tick_params(labelsize=7)
         ax_prof.legend(fontsize=6, loc="upper left", framealpha=0.9)
 
-        # Zoomed inset (bottom-right) of just the below-threshold points, where
-        # the dark value is actually estimated.
         self._add_deep_inset(ax_prof, colours)
 
         # --- Right: the whole record, raw (grey) vs corrected (coloured).
@@ -424,9 +371,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
         plt.show(block=True)
 
     def _plot_full_record(self, fig, ax_corr):
-        # The whole apply_to record against depth: raw in grey, corrected
-        # coloured by corrected value. Downsampled so a large record stays
-        # legible and quick to draw.
+        # Whole record vs depth: raw in grey, corrected coloured; downsampled.
         depth = np.asarray(self.data[self.depth_var].values).ravel()
         raw = np.asarray(self.data[self.apply_to].values).ravel()
         corr = np.asarray(self.data[self.output_as].values).ravel()
@@ -459,9 +404,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
         ax_corr.legend(fontsize=6, loc="upper right", framealpha=0.9)
 
     def _add_deep_inset(self, ax_prof, colours):
-        # Inset in the bottom-right of the profile panel, zoomed onto the deep
-        # (below-threshold) points that drive the estimate, with the same
-        # per-profile colours and min markers.
+        # Inset zoomed onto the deep (below-threshold) points driving the estimate.
         axins = ax_prof.inset_axes([0.56, 0.05, 0.4, 0.4])
 
         deep_depths, deep_vals = [], []
@@ -483,9 +426,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
                 )
         axins.axvline(self.dark_value, ls="--", c="r")
 
-        # Frame on the deep points (plus the dark value) with a 10% margin for
-        # context, deeper (larger depth_var) at the bottom. Explicit limits keep
-        # the zoom-indicator box aligned with what the inset actually shows.
+        # Frame on the deep points plus the dark value, with a 10% margin.
         depth_cat = np.concatenate(deep_depths) if deep_depths else np.array([])
         vals_cat = np.concatenate(deep_vals) if deep_vals else np.array([])
         if depth_cat.size and np.isfinite(vals_cat).any():

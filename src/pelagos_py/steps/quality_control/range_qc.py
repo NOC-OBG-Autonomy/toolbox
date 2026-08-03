@@ -14,21 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unified range QC test.
-
-Replaces the old ``gross range qc`` (flag values *outside* a good band) and
-``impossible range qc`` (flag values *inside* an impossible band) with a single
-test that does both. Each range carries an explicit ``inside``/``outside`` keyword
-that chooses the behaviour: ``outside`` flags data outside the band (a good band),
-``inside`` flags data within it (an impossible band). When no keyword is given the
-bound *order* is used as a fallback (ascending ``[low, high]`` -> outside, descending
-``[high, low]`` -> inside). A flag may list several ranges so the same flag can cover
-more than one band. The test can also propagate a variable's flags onto companion
-variables (e.g. flag PRES and TEMP bad whenever CNDC is bad) either alongside the
-source's own flags (``also_flag``) or in place of them (``flag_instead``, e.g. flag
-CHLA by DEPTH without flagging DEPTH itself), limit the checks to a DEPTH window, and
-plot every flagged variable when diagnostics are enabled.
-"""
+"""Unified range QC test: flags values outside a good band or inside an impossible one."""
 
 #### Mandatory imports ####
 import numpy as np
@@ -41,13 +27,9 @@ import xarray as xr
 from pelagos_py.utils import fig_spec
 
 
-# Argo flag-merge matrix used when propagating an "also_flag" flag onto a companion:
-# the result of merging an existing flag (row) with a new one (column) is
-# QC_COMBINATRIX[existing, new]. This is the same logic Apply QC uses to merge each
-# test's flags into the dataset, copied here so a single test's own cross-flagging is
-# consistent with it (e.g. a companion already flagged bad (4) is never downgraded to
-# probably-bad (3) by propagation). See ApplyQC.organise_flags; this could later move
-# to a shared utility.
+# Argo flag-merge matrix for propagating flags onto a companion: merging an existing
+# flag (row) with a new one (column) gives QC_COMBINATRIX[existing, new], so a worse
+# flag is never downgraded. Same logic as ApplyQC.organise_flags.
 QC_COMBINATRIX = np.array(
     [
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
@@ -66,34 +48,21 @@ QC_COMBINATRIX = np.array(
 @register_qc
 class range_qc(BaseQC):
     """
-    Flag measurements by value range. A single, configurable replacement for the
-    old separate "gross range" and "impossible range" tests.
+    Flag measurements by value range: a single replacement for the old separate
+    "gross range" and "impossible range" tests.
 
-    Each ``{flag: bounds}`` entry describes one or more bands. A band is given as a
-    ``[low, high]`` pair with an ``inside``/``outside`` keyword saying which side to
-    flag:
+    Each ``{flag: bounds}`` entry describes one or more bands:
 
-    - **``[low, high, "outside"]``** — a *good* band; data ``< low`` or ``> high``
-      gets the flag. (The old "gross range" behaviour.) Accepts ``outside``, ``out``
-      or ``o`` (any capitalisation).
-    - **``[low, high, "inside"]``** — an *impossible* band; data between the two bounds,
-      inclusive of the bounds themselves, gets the flag. (The old "impossible range"
-      behaviour.) Accepts ``inside``, ``in`` or ``i`` (any capitalisation).
-    - **A single scalar** ``value`` — flags exact matches (``data == value``). Handy
-      for fill/filler values, e.g. ``4: 0.0`` to flag a pressure of exactly ``0`` as
-      bad.
+    - **``[low, high, "outside"]``** — a *good* band; data outside it gets the flag
+      (accepts ``outside``/``out``/``o``).
+    - **``[low, high, "inside"]``** — an *impossible* band; data between the bounds
+      inclusive gets the flag (accepts ``inside``/``in``/``i``).
+    - **A single scalar** ``value`` — flags exact matches (e.g. a fill value ``4: 0.0``).
 
-    The same flag can cover several bands by giving a *list of bands*, e.g.
-    ``4: [[2, 3, "inside"], [0.1, 10, "outside"]]`` — a point is flagged if it falls in
-    *any* of them.
-
-    If the keyword is omitted the bound *order* is used as a fallback: an ascending
-    ``[low, high]`` means ``outside`` (a good band) and a descending ``[high, low]``
-    means ``inside`` (an impossible band). An explicit keyword always wins over the
-    order, so write ``inside``/``outside`` when in doubt.
-
-    Within a variable, entries are applied most-severe-flag-first, so on overlap the
-    worse flag wins. Anything checked but not flagged is marked good (1).
+    A flag may give a *list of bands* to cover several ranges. If the keyword is
+    omitted the bound order decides: ascending ``[low, high]`` means outside,
+    descending ``[high, low]`` means inside. Entries apply most-severe-flag-first, so
+    the worse flag wins on overlap; anything checked but not flagged is marked good (1).
 
     Target Variable: Any
     Flag Number: Any (user-defined)
@@ -186,8 +155,7 @@ class range_qc(BaseQC):
 
         self.tested_variables = list(self.variable_ranges.keys())
 
-        # flag_instead sources are only a means of flagging their companions, so they
-        # must define ranges but never appear in the outputs.
+        # flag_instead sources must define ranges but never appear in the outputs.
         for var in self.flag_instead:
             if var not in self.variable_ranges:
                 raise ValueError(
@@ -195,10 +163,8 @@ class range_qc(BaseQC):
                     f"variable_ranges; give it ranges or remove it."
                 )
 
-        # Flags become QC values that Apply QC (and this class's also_flag
-        # propagation) merges via the Argo 10x10 matrix, so they must be integer
-        # indices 0-9. Validate up front to fail with a clear config error rather
-        # than an IndexError deep in return_qc.
+        # Flags index the Argo 10x10 matrix, so they must be integers 0-9. Validate
+        # up front for a clear config error rather than an IndexError in return_qc.
         for var, meta in self.variable_ranges.items():
             for flag in meta:
                 if isinstance(flag, bool) or not isinstance(flag, int) or not (0 <= flag <= 9):
@@ -228,13 +194,7 @@ class range_qc(BaseQC):
 
     @classmethod
     def _iter_bands(cls, bounds):
-        """Yield each individual band in a flag's configured ``bounds`` entry.
-
-        A flag can carry a single band or a *list* of bands. A list of bands is one
-        whose elements are themselves lists/tuples (e.g. ``[[2, 3], [0.1, 10]]``);
-        anything else (a scalar, or a single ``[low, high(, kw)]`` band) is treated as
-        one band and yielded as-is.
-        """
+        # Yield each band: a list-of-lists is several bands, anything else is one.
         if (
             isinstance(bounds, (list, tuple))
             and bounds
@@ -246,19 +206,7 @@ class range_qc(BaseQC):
 
     @classmethod
     def _band_hit(cls, vals, band):
-        """Return a boolean mask of the values a single configured ``band`` flags.
-
-        - A single scalar flags exact matches (e.g. a fill value such as ``0``).
-        - ``[low, high, 'outside']`` is a good band: values outside it are flagged.
-        - ``[low, high, 'inside']`` is an impossible band: values between the bounds,
-          inclusive of the bounds themselves, are flagged.
-        - When no keyword is given the order decides: an ascending ``[low, high]`` is a
-          good band (flag outside), a descending ``[high, low]`` an impossible band
-          (flag inside).
-
-        An explicit keyword always wins over the bound order. NaNs compare ``False``
-        throughout, so missing values are never flagged here.
-        """
+        # Boolean mask of values a single band flags. NaNs compare False throughout.
         if not isinstance(band, (list, tuple)):
             return vals == band  # exact-match a single value
 
@@ -318,12 +266,9 @@ class range_qc(BaseQC):
             qc[(qc == 0) & depth_mask] = 1
             qc_arrays[var] = qc
 
-        # Propagate flags onto companions using the Argo merge matrix, so a companion
-        # keeps its own flag wherever merging the propagated one does not upgrade it
-        # (e.g. an existing bad (4) is never downgraded by a propagated probably-bad (3)).
-        # Companions that are not themselves tested start from "no QC" (0), so they
-        # mirror the source's flags; Apply QC then merges the result with their existing
-        # flags.
+        # Propagate flags onto companions via the Argo merge matrix (worst wins).
+        # Untested companions start from "no QC" (0) so they mirror the source; Apply
+        # QC later merges the result with their existing flags.
         for mapping in (self.also_flag, self.flag_instead):
             for var, companions in mapping.items():
                 src = qc_arrays.get(var)
