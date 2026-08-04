@@ -145,7 +145,7 @@ def type_errors(schema: dict, params: dict) -> list[str]:
         f"{name} (expected {_expected_str(spec)}, got {type(params[name]).__name__} "
         f"{params[name]!r})"
         for name, spec in schema.items()
-        if name in params and not matches_type(spec, params[name])
+        if name in params and not matches_type(spec, coerce(spec, params[name]))
     ]
 
 
@@ -160,7 +160,7 @@ def option_errors(schema: dict, params: dict) -> list[str]:
         if name not in params or not spec.get("options"):
             continue
         options = spec["options"]
-        value = params[name]
+        value = coerce(spec, params[name])
         values = value if isinstance(value, (list, tuple)) else [value]
         bad = [v for v in values if v not in options]
         if bad:

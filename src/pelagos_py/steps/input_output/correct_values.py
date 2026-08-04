@@ -51,6 +51,10 @@ class CorrectValues(BaseStep):
     ----------
     target_variable : str
         Name of the variable to correct (e.g. ``"CNDC"``).
+    output_as : str, optional
+        Name to write the result under. Defaults to ``target_variable`` (in-place).
+        Set it to a new name to copy/rename, e.g. ``LATITUDE_GPS`` -> ``LATITUDE``
+        with ``slope: 1`` leaves the values unchanged and just exposes the new name.
     slope : float, optional
         Multiplicative factor (default ``1.0``). For a x10 unit conversion, set ``10``.
     intercept : float, optional
@@ -59,9 +63,16 @@ class CorrectValues(BaseStep):
         ``[min, max]`` for the *corrected* variable. The correction is applied only
         when the data's median falls outside this range. If omitted, the correction
         is always applied.
+    time_start, time_end : str, optional
+        Restrict the correction to a TIME window (e.g. ``"2024-07-01T00:00:00"``).
+        Points outside the window keep their raw value. Either bound may be omitted.
     corrected_units : str, optional
-        Units string written to the variable's attributes after a correction is
-        applied (e.g. ``"mS/cm"``). Left untouched if omitted or if no correction runs.
+        Units string written to the output variable's attributes after a correction
+        is applied (e.g. ``"mS/cm"``). Left untouched if omitted or if no correction runs.
+    append_description, overwrite_description : str, optional
+        Note written to the output variable's ``comment`` attribute (e.g.
+        ``"Renamed from LATITUDE_GPS"``). ``append_description`` adds to any existing
+        comment; ``overwrite_description`` replaces it. Set at most one.
 
     Examples
     --------
@@ -90,6 +101,12 @@ class CorrectValues(BaseStep):
             "required": True,
             "description": "Name of the variable to correct (e.g. 'CNDC').",
         },
+        "output_as": {
+            "type": str,
+            "default": None,
+            "description": "Name to write the result under (default: target_variable, "
+                           "i.e. in place). Set to a new name to copy/rename.",
+        },
         "slope": {
             "type": float,
             "default": 1.0,
@@ -112,8 +129,28 @@ class CorrectValues(BaseStep):
         "corrected_units": {
             "type": str,
             "default": None,
-            "description": "Optional units string written to the variable's attributes after a "
-                           "correction is applied (e.g. 'mS/cm').",
+            "description": "Optional units string written to the output variable's attributes "
+                           "after a correction is applied (e.g. 'mS/cm').",
+        },
+        "time_start": {
+            "type": str,
+            "default": None,
+            "description": "Optional ISO timestamp; only points at/after this TIME are corrected.",
+        },
+        "time_end": {
+            "type": str,
+            "default": None,
+            "description": "Optional ISO timestamp; only points at/before this TIME are corrected.",
+        },
+        "append_description": {
+            "type": str,
+            "default": None,
+            "description": "Optional note appended to the output variable's 'comment' attribute.",
+        },
+        "overwrite_description": {
+            "type": str,
+            "default": None,
+            "description": "Optional note that replaces the output variable's 'comment' attribute.",
         },
     }
 
@@ -128,6 +165,12 @@ class CorrectValues(BaseStep):
                 f"Available variables: {list(self.data.data_vars)}."
             )
 
+        out = self.output_as or var
+        if self.append_description is not None and self.overwrite_description is not None:
+            raise ValueError(
+                f"[{self.name}] set only one of 'append_description' / 'overwrite_description'."
+            )
+
         vals = self.data[var].values.astype(float)
         self._raw_data = vals.copy()
         self.applied = False
@@ -138,33 +181,70 @@ class CorrectValues(BaseStep):
             self.context["data"] = self.data
             return self.context
 
-        # Decide whether the correction is needed.
+        # Restrict the correction to a TIME window when requested.
+        window = np.ones(vals.shape, dtype=bool)
+        if self.time_start is not None or self.time_end is not None:
+            if "TIME" not in self.data:
+                raise ValueError(
+                    f"[{self.name}] time_start/time_end need a 'TIME' variable in the data."
+                )
+            times = self.data["TIME"].values
+            if self.time_start is not None:
+                window &= times >= np.datetime64(self.time_start)
+            if self.time_end is not None:
+                window &= times <= np.datetime64(self.time_end)
+
+        # Decide whether the correction is needed, judging by the windowed data.
+        do_scale = True
         if self.expected_range is not None:
             lo, hi = float(self.expected_range[0]), float(self.expected_range[1])
-            median_val = float(np.nanmedian(vals[valid_mask]))
-            if lo <= median_val <= hi:
+            sample = vals[valid_mask & window]
+            median_val = float(np.nanmedian(sample)) if sample.size else np.nan
+            if np.isfinite(median_val) and lo <= median_val <= hi:
                 self.log(
                     f"'{var}' median ({median_val:.4g}) is within expected range "
                     f"[{lo}, {hi}]; skipping correction."
                 )
-                self.context["data"] = self.data
-                return self.context
-            self.log(
-                f"'{var}' median ({median_val:.4g}) is outside expected range "
-                f"[{lo}, {hi}]; applying correction."
-            )
+                do_scale = False
+            elif np.isfinite(median_val):
+                self.log(
+                    f"'{var}' median ({median_val:.4g}) is outside expected range "
+                    f"[{lo}, {hi}]; applying correction."
+                )
 
-        # Apply the affine correction (NaNs propagate harmlessly through arithmetic).
-        corrected = self.slope * vals + self.intercept
-        self.data[var].values = corrected
-        self.applied = True
-        self.log(
-            f"Applied correction to '{var}': corrected = {self.slope} * value + {self.intercept}."
-        )
+        # Nothing changes when there is no scaling, no rename and no comment to set.
+        no_description = self.append_description is None and self.overwrite_description is None
+        if not do_scale and out == var and no_description:
+            self.context["data"] = self.data
+            return self.context
+
+        # Apply the affine correction within the window (NaNs propagate harmlessly).
+        corrected = vals.copy()
+        if do_scale:
+            corrected[window] = self.slope * vals[window] + self.intercept
+            self.applied = True
+
+        # Write to output_as (a copy/rename when it differs from target_variable).
+        self.data[out] = self.data[var].copy(data=corrected)
+
+        if self.applied:
+            self.log(
+                f"Applied correction to '{out}': corrected = {self.slope} * value + {self.intercept}."
+            )
+        if out != var:
+            self.log(f"Wrote '{var}' to '{out}'.")
 
         if self.corrected_units is not None:
-            self.data[var].attrs["units"] = self.corrected_units
-            self.log(f"Set '{var}' units to '{self.corrected_units}'.")
+            self.data[out].attrs["units"] = self.corrected_units
+            self.log(f"Set '{out}' units to '{self.corrected_units}'.")
+
+        if self.overwrite_description is not None:
+            self.data[out].attrs["comment"] = self.overwrite_description
+        elif self.append_description is not None:
+            existing = self.data[out].attrs.get("comment", "")
+            self.data[out].attrs["comment"] = (
+                f"{existing} {self.append_description}".strip() if existing else self.append_description
+            )
 
         if self.diagnostics:
             self.plot_diagnostics()
