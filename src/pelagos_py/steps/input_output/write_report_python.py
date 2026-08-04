@@ -1380,8 +1380,8 @@ def make_plots(
     #   remaining 80% across the QC variables.
     if bar is not None:
         bar.update(10)
-        per_var = 80.0 / len(qc_vars) if qc_vars else 0
-    for var in qc_vars:
+    emitted = 0
+    for i, var in enumerate(qc_vars, start=1):
         var_source = var[:-3]  #   TEMP_QC --> TEMP
         #   When both the measurement and its flags are entirely NaN there is
         #   nothing to plot. Note it in one line and skip so more useful plots
@@ -1393,7 +1393,9 @@ def make_plots(
             hist_img = qc_hist(data, outdir, var, dataset_label=dataset_label)
             pdf.image_full(hist_img, aspect=3.2 / 8)
         if bar is not None:
-            bar.update(per_var)
+            target = round(80 * i / len(qc_vars))
+            bar.update(target - emitted)
+            emitted = target
 
 
 def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
