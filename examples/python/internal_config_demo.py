@@ -315,6 +315,10 @@ steps:
         stuck value qc: # A frozen reading means a dead sensor
           variables:
             DOWNWELLING_PAR: 5
+        # Per-profile PAR shape test (La Forgia & Organelli 2025); needs
+        # PROFILE_NUMBER, so it runs after Find Profiles above.
+        PAR irregularity qc:
+          noise_equivalent_estimate: 3e-2 # Sensor noise-equivalent irradiance
     diagnostics: false
 
 # This glider only logs PAR on upcasts, so downcasts (and gaps) have none.
