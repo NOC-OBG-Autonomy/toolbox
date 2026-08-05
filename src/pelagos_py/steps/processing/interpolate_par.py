@@ -274,8 +274,8 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _interpolate_scalar(calc, profiles, prof_tsec):
-        # Fill NaN profiles by interpolating in time; no extrapolation beyond the
-        # span bracketed by computed profiles (those stay NaN).
+        # Fill NaN profiles by interpolating in time; outside the span bracketed
+        # by computed profiles, hold the nearest endpoint value constant.
         order = sorted(profiles, key=lambda p: (prof_tsec[p] if np.isfinite(prof_tsec[p]) else np.inf))
         times = np.array([prof_tsec[p] for p in order], dtype=float)
         vals = np.array([calc.get(p, np.nan) for p in order], dtype=float)
@@ -285,8 +285,7 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
             return dict(calc)  # not enough to interpolate from
 
         interp = np.interp(times, times[anchor], vals[anchor])
-        lo, hi = times[anchor][0], times[anchor][-1]
-        interp[~np.isfinite(times) | (times < lo) | (times > hi)] = np.nan
+        interp[~np.isfinite(times)] = np.nan
         return {p: float(interp[i]) for i, p in enumerate(order)}
 
     def generate_diagnostics(self):

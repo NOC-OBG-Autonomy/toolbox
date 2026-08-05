@@ -55,6 +55,10 @@ class spike_qc(BaseQC):
 
     qc_name = "spike qc"
 
+    # Samples already carrying these flags don't inform the rolling median / std
+    # baseline (they'd bias detection); they keep their existing flag.
+    IGNORE_FLAGS = [3, 4, 9]
+
     # Specify if test target variable is user-defined (if True, __init__ has to be redefined)
     dynamic = True
 
@@ -90,8 +94,10 @@ class spike_qc(BaseQC):
         )
 
     def return_qc(self):
-        # Subset the data
-        self.data = self.data[self.required_variables]
+        # Subset the data, keeping any existing _QC so already-bad samples can be
+        # excluded from the baseline below.
+        qc_cols = [f"{v}_QC" for v in self.variables if f"{v}_QC" in self.data]
+        self.data = self.data[self.required_variables + qc_cols]
 
         # Generate the variable-specific flags
         for var, sensitivity in self.variables.items():
@@ -111,8 +117,13 @@ class spike_qc(BaseQC):
                     self.data["PROFILE_NUMBER"] == profile_number, drop=True
                 )
 
-                # remove nans
-                var_data = profile[var].dropna(dim="N_MEASUREMENTS")
+                # Usable = not NaN and not already flagged bad/missing; only these
+                # inform the baseline, so prior-bad spikes can't bias detection.
+                usable = ~profile[var].isnull()
+                if f"{var}_QC" in profile:
+                    usable = usable & ~profile[f"{var}_QC"].isin(self.IGNORE_FLAGS)
+
+                var_data = profile[var].where(usable, drop=True)
                 if len(var_data) < self.window_size:
                     continue
 
@@ -123,7 +134,7 @@ class spike_qc(BaseQC):
                     .median()
                     .to_numpy()
                 )
-                residules = var_data - rolling_median
+                residules = var_data.to_numpy() - rolling_median
 
                 # Define the residule threshold
                 threshold = np.nanstd(residules) * sensitivity
@@ -131,10 +142,11 @@ class spike_qc(BaseQC):
                 # Apply the threshold to residules to get the flags
                 spike_flags = np.where((np.abs(residules) > threshold), 4, 1)
 
-                # Reinclude the nans as missing (9) flags
-                nan_mask = np.isnan(profile[var])
-                profile_flags = np.where(nan_mask, 9, 1)
-                profile_flags[np.where(~nan_mask)] = spike_flags
+                # NaNs are missing (9); excluded/usable points start good (1).
+                # Excluded points stay 1 so Apply QC's combinatrix keeps their
+                # existing (worse) flag; usable points take their spike result.
+                profile_flags = np.where(profile[var].isnull().to_numpy(), 9, 1)
+                profile_flags[np.where(usable.to_numpy())] = spike_flags
 
                 # Stitch the QC results back into the QC container
                 profile_indices = np.where(

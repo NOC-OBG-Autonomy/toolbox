@@ -219,8 +219,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
         deep_reach = df.groupby("PROFILE_NUMBER")[depth].max()
         candidates = deep_reach[deep_reach > self.depth_threshold].index.to_numpy()
         if len(candidates) == 0:
-            raise ValueError(
-                f"[{self.step_name}] No profiles reach past the depth threshold. "
+            self.halt(
+                "No profiles reach past the depth threshold. "
                 "Try adjusting 'depth_threshold' or 'depth_var'."
             )
 

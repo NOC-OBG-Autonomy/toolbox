@@ -43,6 +43,7 @@ def make_context(bad_block=None, n_profiles=2):
         }
     )
     n = ds.sizes["N_MEASUREMENTS"]
+    ds["CNDC"].attrs["units"] = "mS/cm"  # fixture values are mS/cm magnitude
     for var in ("TEMP", "CNDC", "PRES"):
         ds[f"{var}_QC"] = ("N_MEASUREMENTS", np.ones(n, dtype=int))
 

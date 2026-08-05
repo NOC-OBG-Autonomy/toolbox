@@ -28,6 +28,7 @@ import gsw
 import matplotlib
 import matplotlib.pyplot as plt
 from pelagos_py.utils import fig_spec
+from pelagos_py.utils.processing_utils import cndc_scale_factor
 
 
 @register_step
@@ -113,12 +114,19 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
             nan_to_null=False,
         )
 
+        # gsw wants conductivity in mS/cm; scale from the units attribute (S/m assumed if unset)
+        cndc_factor = cndc_scale_factor(self.data["CNDC"].attrs.get("units"))
+
         # Define GSW (Gibbs SeaWater) function calls for deriving oceanographic variables
         # Each tuple contains: (output_variable_name, gsw_function, [required_input_variables])
         gsw_function_calls = (
             # gsw.z_from_p returns TEOS-10 height (negative down); negate for OG1 positive-down depth
             ("DEPTH", lambda p, lat: -gsw.z_from_p(p, lat), ["PRES", "LATITUDE"]),
-            ("PRAC_SALINITY", gsw.SP_from_C, ["CNDC", "TEMP", "PRES"]),
+            (
+                "PRAC_SALINITY",
+                lambda c, t, p: gsw.SP_from_C(c * cndc_factor, t, p),
+                ["CNDC", "TEMP", "PRES"],
+            ),
             (
                 "ABS_SALINITY",
                 gsw.SA_from_SP,

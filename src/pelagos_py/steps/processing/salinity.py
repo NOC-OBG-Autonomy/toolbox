@@ -20,6 +20,7 @@
 from pelagos_py.steps.base_step import BaseStep, register_step
 from pelagos_py.utils.qc_handling import QCHandlingMixin
 import pelagos_py.utils.diagnostics as diag
+from pelagos_py.utils.processing_utils import cndc_scale_factor
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
@@ -81,6 +82,9 @@ def compute_optimal_lag(
     t0 = profile_data[time_col].values[0]
     profile_data["ELAPSED_TIME[s]"] = (profile_data[time_col] - t0).dt.total_seconds()
 
+    # gsw wants conductivity in mS/cm; scale from the units attribute (S/m assumed if unset)
+    cndc_factor = cndc_scale_factor(profile_data["CNDC"].attrs.get("units"))
+
     # Callable predicting CNDC at any given time
     conductivity_from_time = interpolate.interp1d(
         profile_data["ELAPSED_TIME[s]"].values,
@@ -98,15 +102,10 @@ def compute_optimal_lag(
             profile_data["ELAPSED_TIME[s]"] + lag
         )
 
-        # Scale if conductivity is supplied in S/m rather than mS/cm
-        cndc_scaled = (
-            time_shifted_conductivity * 10
-            if np.nanmax(time_shifted_conductivity) < 10
-            else time_shifted_conductivity
-        )
-
         PSAL = gsw.conversions.SP_from_C(
-            cndc_scaled, profile_data["TEMP"], profile_data["PRES"]
+            time_shifted_conductivity * cndc_factor,
+            profile_data["TEMP"],
+            profile_data["PRES"],
         )
 
         PSAL_Smooth = running_average_nan(PSAL, filter_window_size)
@@ -627,8 +626,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         COLOUR_UP = "tab:blue"
 
         def psal_from(ds):
-            c = ds["CNDC"].values
-            c = c * 10 if np.nanmax(c) < 10 else c
+            c = ds["CNDC"].values * cndc_scale_factor(ds["CNDC"].attrs.get("units"))
             return gsw.conversions.SP_from_C(c, ds["TEMP"].values, ds["PRES"].values)
 
         has_direction = "PROFILE_DIRECTION" in self.data

@@ -173,12 +173,13 @@ def test_no_warning_at_default_threshold(caplog):
     assert "shallower" not in caplog.text
 
 
-def test_raises_when_no_profiles_reach_threshold():
+def test_halts_when_no_profiles_reach_threshold(caplog):
     ctx = make_context(dark=0.7, max_pres=500.0)  # never exceeds the 950 default
     step = make_step({"apply_to": "CHLA"}, ctx)
 
-    with pytest.raises(ValueError, match="No profiles reach past the depth threshold"):
+    with caplog.at_level(logging.ERROR), pytest.raises(SystemExit):
         step.run()
+    assert "No profiles reach past the depth threshold" in caplog.text
 
 
 def test_raises_when_apply_to_missing():

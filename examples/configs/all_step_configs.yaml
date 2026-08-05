@@ -86,28 +86,29 @@ steps:
 
 # Correct Values (src/pelagos_py/steps/input_output/correct_values.py):
 #   Applies an affine correction (corrected = slope * value + intercept) to a single variable.
-#   Useful for unit conversions (e.g. CNDC S/m -> mS/cm is a simple x10) or sensor alignment.
-#   The shown config converts CNDC into the mS/cm expected by Derive CTD's GSW salinity calc.
+#   Useful for sensor cross-calibration or unit conversions. (Not needed for CNDC units:
+#   Derive CTD reads the units attribute and converts S/m -> mS/cm for gsw itself.)
+#   The shown config applies a cross-calibration to TEMP.
   - name: "Correct Values"
     parameters:
       # [target_variable]:
       #   Name of the variable to correct.
-      target_variable: CNDC
+      target_variable: TEMP
       # [slope]:
-      #   Multiplicative factor (corrected = slope * value + intercept). x10 for the S/m -> mS/cm conversion.
-      slope: 10.0
+      #   Multiplicative factor (corrected = slope * value + intercept).
+      slope: 1.001
       # [intercept]:
-      #   Additive offset applied after scaling. Use for sensor alignment; leave 0 for a pure unit conversion.
-      intercept: 0.0
+      #   Additive offset applied after scaling. Use for sensor alignment; leave 0 for a pure scaling.
+      intercept: -0.05
       # [expected_range]:
       #   Optional [min, max] for the corrected variable. The correction is applied only when the data's
-      #   median falls OUTSIDE this range, so files already in the right units are left untouched.
+      #   median falls OUTSIDE this range, so files already in the right range are left untouched.
       #   Omit to always apply the correction.
-      expected_range: [20, 45]
+      expected_range: [-2.5, 40]
       # [corrected_units]:
       #   Optional units string written to the variable's attributes after a correction. Leave blank to
       #   keep the existing units.
-      corrected_units: mS/cm
+      corrected_units: degrees_Celsius
     # [diagnostics]:
     #   Plots the raw vs corrected values with the expected-range limits.
     diagnostics: false

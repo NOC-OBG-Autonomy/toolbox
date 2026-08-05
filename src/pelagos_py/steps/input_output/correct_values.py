@@ -16,8 +16,8 @@
 
 """Pipeline step for applying a linear correction (slope/intercept) to a variable.
 
-Generic enough for unit conversions (e.g. CNDC S/m -> mS/cm is a simple x10),
-sensor alignment (slope + intercept), or any other affine rescaling. An optional
+Generic enough for sensor cross-calibration (slope + intercept), unit conversions,
+or any other affine rescaling. An optional
 ``expected_range`` makes the correction self-detecting: it is applied only when
 the data looks like it still needs it, so the same config keeps working even after
 upstream input files are fixed.
@@ -43,9 +43,10 @@ class CorrectValues(BaseStep):
     applied only when the median falls *outside* that range (i.e. the data still looks
     uncorrected). When ``expected_range`` is omitted the correction is always applied.
 
-    This makes a config robust to upstream fixes: e.g. a CNDC unit conversion
-    (``slope: 10``) targeting ``expected_range: [20, 45]`` will scale S/m data into
-    mS/cm, but quietly skip files that already arrive in mS/cm.
+    This makes a config robust to upstream fixes: a unit conversion targeting an
+    ``expected_range`` quietly skips files that already arrive in the right units.
+    (CNDC does not need this: Derive CTD reads the units attribute and converts
+    S/m -> mS/cm for gsw itself.)
 
     Parameters
     ----------
@@ -83,11 +84,10 @@ class CorrectValues(BaseStep):
         steps:
           - name: Correct Values
             parameters:
-              target_variable: CNDC
-              slope: 10.0
-              intercept: 0.0
-              expected_range: [20, 45]
-              corrected_units: mS/cm
+              target_variable: TEMP
+              slope: 1.001
+              intercept: -0.05
+              expected_range: [-2.5, 40]
             diagnostics: false
     """
 

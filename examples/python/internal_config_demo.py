@@ -52,20 +52,7 @@ steps:
 # ===========================================================
 #                          CTD
 # ===========================================================
-# Nelson data has incorrect units for CNDC, so the values are corrected before
-# any of the CTD tests below run against them.
-  - name: Correct Values
-    parameters:
-      target_variable: CNDC
-      slope: 10.0
-      intercept: 0.0
-      expected_range: [20, 45]
-      corrected_units: mS/cm
-    diagnostics: false
-
-# Range and stuck-value tests on the CTD triad (PRES, TEMP, CNDC). The spike
-# test on these same three lives further down: it is a per-profile test and so
-# needs PROFILE_NUMBER, which does not exist until Find Profiles has run.
+# Range and stuck-value tests on the CTD triad (PRES, TEMP, CNDC).
   - name: Apply QC
     parameters:
       qc_settings:
@@ -78,9 +65,9 @@ steps:
             TEMP: # 'outside' -> flag TEMP when it falls OUTSIDE the band
               3: [0, 30, outside]
               4: [-2.5, 40, outside]
-            CNDC:
-              3: [5, 42, outside]
-              4: [2, 45, outside]
+            CNDC: # S/m
+              3: [0.5, 4.2, outside]
+              4: [0.2, 4.5, outside]
           also_flag:
             # Cross-flag the CTD triad: PRES, TEMP & CNDC come from the same instrument, so
             # if one is untrustworthy the others probably are too.
@@ -156,30 +143,6 @@ steps:
           valid profile qc:
             profile_length: 50 # Profiles must be at least 100 points long
             depth_range: [0, 1000] # and must contain data within 0 and 1000 m
-    diagnostics: false
-
-# ===========================================================
-#                    CTD SPIKE TESTS
-# ===========================================================
-# The remaining CTD test: a per-profile rolling-median/MAD residual test on the
-# triad. It has to sit here rather than up in the CTD section because it needs
-# PROFILE_NUMBER from Find Profiles above.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        spike qc:
-          variables: # Variable -> spike sensitivity
-            PRES: 2
-            TEMP: 2
-            CNDC: 2
-          also_flag: # Cross-flag TEMP<->CNDC only. PRES is interpolated (complete)
-            # by this point while TEMP/CNDC are still ~77% missing, so cross-flagging
-            # PRES against them would drag its (valid) samples to 9 (missing).
-            PRES: [CNDC, TEMP]
-            CNDC: [TEMP]
-            TEMP: [CNDC]
-          window_size: 50 # Rolling-median window size in samples
-          plot: [PRES, TEMP, CNDC]
     diagnostics: false
 
 # ===========================================================

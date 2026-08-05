@@ -48,16 +48,16 @@ def test_depth_of_ipar_honours_the_level():
 # --- interpolation ----------------------------------------------------------
 
 
-def test_interpolate_scalar_fills_interior_and_leaves_ends_nan():
+def test_interpolate_scalar_fills_interior_and_holds_endpoints_at_edges():
     profiles = np.array([1, 2, 3, 4])
     prof_tsec = {1: 0.0, 2: 10.0, 3: 20.0, 4: 30.0}
     # Computed on profiles 2 and 3 only; 1 (before) and 4 (after) have no anchor.
     calc = {1: np.nan, 2: 40.0, 3: 60.0, 4: np.nan}
     out = InterpolatePAR._interpolate_scalar(calc, profiles, prof_tsec)
-    assert np.isnan(out[1])  # no extrapolation before the first computed profile
+    assert out[1] == pytest.approx(40.0)  # nearest endpoint held before first computed
     assert out[2] == pytest.approx(40.0)
     assert out[3] == pytest.approx(60.0)
-    assert np.isnan(out[4])  # no extrapolation past the last computed profile
+    assert out[4] == pytest.approx(60.0)  # nearest endpoint held past last computed
 
 
 def test_interpolate_scalar_interpolates_a_gap_in_the_middle():
