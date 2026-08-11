@@ -597,9 +597,20 @@ steps:
       correction_coefficient: 0.1
     diagnostics: false
 
+  - name: "Shift Oxygen To CTD"
+    parameters:
+      # <MANDATORY>
+      shift_vars: ["UNCAL_PHASE_DOXY_PCORR", "TEMP_DOXY"]
+      # <OPTIONAL>
+      # lag_seconds: 2.0
+      pitch_name: "GLIDER_PITCH"
+      distance_cm: 90
+      cast_id_var: "PROFILE_DIRECTION"
+    diagnostics: false
+
   - name: "Derive Calibrated Phase"
     parameters:
-      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR"
+      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR_SHIFTED"
       calib_coefficients: [0, 1, 0, 0]
     diagnostics: false
 

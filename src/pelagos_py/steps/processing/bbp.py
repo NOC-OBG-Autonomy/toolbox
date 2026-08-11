@@ -101,6 +101,9 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
 
         # Stitch back into the data
         self.data[self.output_as] = bbp_corrected
+        self.data[self.output_as].attrs["units"] = "m-1"
+        self.data[self.output_as].attrs["long_name"] = "Total particulate backscatter"
+        self.data[self.output_as].attrs["standard_name"] = self.output_as
 
         self.reconstruct_data()
         self.update_qc()

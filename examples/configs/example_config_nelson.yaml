@@ -269,6 +269,97 @@ steps:
     diagnostics: false
 
 # ===========================================================
+#                        OXYGEN
+# ===========================================================
+# Range test on the raw dissolved oxygen (MOLAR_DOXY, micromole/l), computed
+# on-board by the instrument: flag bad (4) outside 100-400. Kept as a sanity
+# check on the manufacturer's own value, ahead of the recomputed pipeline below.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            MOLAR_DOXY:
+              4: [100, 400, outside]
+    diagnostics: false
+
+# Recompute MOLAR_DOXY from the raw phase rather than trust the instrument's
+# on-board value, so the pressure/salinity corrections and geometric time-shift
+# below are all applied consistently.
+  - name: "Derive Uncalibrated Phase"
+    parameters:
+      blue_phase_name: "BPHASE_DOXY"
+    diagnostics: false
+
+# Nelson has no optode temperature at all (no TEMP_DOXY / TEMP_VOLTAGE_DOXY),
+# so "Derive Optode Temperature" is skipped and CTD TEMP is used everywhere
+# below instead.
+
+# Pcoef1 for the aa4831 optode (RISC_DO_Optode calibration_sheets).
+  - name: "Phase Pressure Correction"
+    parameters:
+      optode_pressure_name: "PRES"
+      correction_coefficient: 0.1
+    diagnostics: false
+
+# Phase occasionally sticks at/near 0, which isn't a physically valid reading -
+# flag it bad ahead of the geometric shift below so it doesn't get interpolated in.
+  - name: Apply QC
+    parameters:
+      qc_settings:
+        range qc:
+          variable_ranges:
+            UNCAL_PHASE_DOXY_PCORR:
+              4: [1, -.inf, inside]
+    diagnostics: false
+
+# Geometrically shift the optode phase onto the CTD's dense sampling grid,
+# correcting for the water travel time between the two sensors. GLIDER_PITCH
+# isn't available, so this uses the fixed default lag from Woo & Gourcuff
+# (2023) rather than a per-profile derived one. TEMP is already on the CTD
+# grid (it comes from the CTD, not the optode), so it doesn't need shifting.
+  - name: "Shift Oxygen To CTD"
+    parameters:
+      shift_vars: ["UNCAL_PHASE_DOXY_PCORR"]
+      lag_seconds: 3.945
+      distance_cm: 90
+    diagnostics: false
+
+# PhaseCoef0-3 default to the identity (0, 1, 0, 0) in the calibration sheet -
+# this optode's calibration is entirely in the SVU foil coefficients below.
+  - name: "Derive Calibrated Phase"
+    parameters:
+      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR_SHIFTED"
+      calib_coefficients: [0, 1, 0, 0]
+    diagnostics: false
+
+# Stern-Volmer-Uchida conversion using the manufacturer SVUFoilCoef0-6 for
+# optode SN 144 (RISC_DO_Optode/RISC_DO_Optode_scripts/calibration_sheets/
+# calibration_sheet_aa4831_397.py). TODO: confirm this is the right
+# calibration sheet for Nelson's optode - the notebook's glider/optode table
+# lists SN 144 against glider ID "397", not 646.
+  - name: "Derive Oxygen Concentration"
+    parameters:
+      method: "SVU"
+      temperature_name: "TEMP"
+      svu_coefficients: [2.67915e-03, 1.12428e-04, 2.29021e-06, 1.43603e+02, -2.08012e-01, -3.59303e+01, 2.82344e+00]
+    diagnostics: false
+
+  - name: "Molar DOXY Salinity Correction"
+    parameters:
+      salinity_name: "PRAC_SALINITY"
+      temperature_name: "TEMP"
+    diagnostics: false
+
+  - name: "Molar DOXY Pressure Correction"
+    parameters:
+      pressure_name: "PRES"
+      temperature_name: "TEMP"
+      molar_doxy_name: "MOLAR_DOXY_PSAL"
+      uncalibrated_phase_correction_applied: true
+    diagnostics: false
+
+# ===========================================================
 #                 CHLOROPHYLL CORRECTIONS
 # ===========================================================
 # QC the PAR input to the quenching step below. Deliberately NO lower bound:
@@ -347,11 +438,13 @@ steps:
       depth_threshold: 950     # Only use data below this depth to estimate the dark value
     diagnostics: false         # Plot the computed dark value and corrected profiles
 
-# Flag CHLA by DEPTH rather than by its own value: the top 5 m is unstable, so
+# Flag CHLA by DEPTH rather than by its own value: the top 2 m is unstable, so
 # mark it probably-bad-but-correctable (3) and everything deeper probably-good
 # (2). DEPTH itself is not flagged, and the Argo merge means the 2 can't
 # downgrade a 3/4 from the range or spike tests above. The quenching step below
-# then leaves the top 5 m out of its calculations while still correcting it.
+# then leaves the top 2 m out of its calculations while still correcting it.
+# Kept at 2 m (not 5): thomalla2017 needs at least one calc-eligible CHLA point
+# within its own 5 m surface-anchor window, so this can't reach/exceed that.
 # CHLA_ADJUSTED is flagged too, not just CHLA: Deep Correction has already run,
 # so the quenching step reads CHLA_ADJUSTED and gates on CHLA_ADJUSTED_QC.
   - name: Apply QC
@@ -360,8 +453,8 @@ steps:
         range qc:
           variable_ranges:
             DEPTH:
-              3: [0, 5, inside]
-              2: [0, 5, outside]
+              3: [0, 2, inside]
+              2: [0, 2, outside]
           flag_instead:
             DEPTH: [CHLA, CHLA_ADJUSTED]
     diagnostics: false

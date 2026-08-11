@@ -88,8 +88,9 @@ def _pipeline_provided_variables(steps_list):
         provided.update(getattr(step_class, "qc_outputs", []))
         provided.update(parameters.get("to_derive", []))
         provided.update(parameters.get("qc_outputs", []))
-        if parameters.get("output_as"):
-            provided.add(parameters["output_as"])
+        out = parameters.get("output_as")
+        if out:
+            provided.update(out if isinstance(out, (list, tuple)) else [out])
         if step_config["name"] == "Apply QC":
             for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
                 qc_class = QC_CLASSES.get(qc_name)
@@ -308,8 +309,9 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
         available_vars.update(provided_vars)
         available_vars.update(parameters.get("to_derive", []))
         available_vars.update(parameters.get("qc_outputs", []))
-        if parameters.get("output_as"):
-            available_vars.add(parameters["output_as"])
+        out = parameters.get("output_as")
+        if out:
+            available_vars.update(out if isinstance(out, (list, tuple)) else [out])
 
     if steps_list:
         logger.info("Pipeline variable check successful.")

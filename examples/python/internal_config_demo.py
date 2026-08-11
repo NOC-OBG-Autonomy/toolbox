@@ -339,11 +339,13 @@ steps:
       depth_threshold: 950     # Only use data below this depth to estimate the dark value
     diagnostics: false         # Plot the computed dark value and corrected profiles
 
-# Flag CHLA by DEPTH rather than by its own value: the top 5 m is unstable, so
+# Flag CHLA by DEPTH rather than by its own value: the top 2 m is unstable, so
 # mark it probably-bad-but-correctable (3) and everything deeper probably-good
 # (2). DEPTH itself is not flagged, and the Argo merge means the 2 can't
 # downgrade a 3/4 from the range or spike tests above. The quenching step below
-# then leaves the top 5 m out of its calculations while still correcting it.
+# then leaves the top 2 m out of its calculations while still correcting it.
+# Kept at 2 m (not 5): thomalla2017 needs at least one calc-eligible CHLA point
+# within its own 5 m surface-anchor window, so this can't reach/exceed that.
 # CHLA_ADJUSTED is flagged too, not just CHLA: Deep Correction has already run,
 # so the quenching step reads CHLA_ADJUSTED and gates on CHLA_ADJUSTED_QC.
   - name: Apply QC
@@ -352,8 +354,8 @@ steps:
         range qc:
           variable_ranges:
             DEPTH:
-              3: [0, 5, inside]
-              2: [0, 5, outside]
+              3: [0, 2, inside]
+              2: [0, 2, outside]
           flag_instead:
             DEPTH: [CHLA, CHLA_ADJUSTED]
     diagnostics: false

@@ -116,6 +116,27 @@ def test_output_as_scales_into_new_variable():
     assert np.allclose(out["data"]["CNDC"].values, 3.5)  # source unchanged
 
 
+def test_output_as_list_writes_all_names():
+    ctx = make_context(np.full(5, 3.5), var="CHLA")
+    step = make_step({"target_variable": "CHLA", "output_as": ["CHLA", "CHLA_MID"], "slope": 2.0}, ctx)
+
+    out = step.run()
+
+    assert np.allclose(out["data"]["CHLA"].values, 7.0)
+    assert np.allclose(out["data"]["CHLA_MID"].values, 7.0)
+
+
+def test_output_as_list_copy_without_scaling():
+    # identity copy: snapshot CHLA into CHLA_MID mid-pipeline, CHLA untouched
+    ctx = make_context(np.full(5, 3.5), var="CHLA")
+    step = make_step({"target_variable": "CHLA", "output_as": ["CHLA", "CHLA_MID"]}, ctx)
+
+    out = step.run()
+
+    assert np.allclose(out["data"]["CHLA_MID"].values, 3.5)
+    assert np.allclose(out["data"]["CHLA"].values, 3.5)
+
+
 def test_time_window_limits_correction():
     times = np.array(["2024-08-01", "2024-08-02", "2024-08-03", "2024-08-04"], dtype="datetime64[ns]")
     ctx = make_context(np.full(4, 2.0), var="X", times=times)

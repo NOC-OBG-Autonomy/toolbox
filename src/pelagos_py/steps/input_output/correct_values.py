@@ -52,10 +52,13 @@ class CorrectValues(BaseStep):
     ----------
     target_variable : str
         Name of the variable to correct (e.g. ``"CNDC"``).
-    output_as : str, optional
-        Name to write the result under. Defaults to ``target_variable`` (in-place).
+    output_as : str or list, optional
+        Name(s) to write the result under. Defaults to ``target_variable`` (in-place).
         Set it to a new name to copy/rename, e.g. ``LATITUDE_GPS`` -> ``LATITUDE``
         with ``slope: 1`` leaves the values unchanged and just exposes the new name.
+        A list writes the same result under several names, e.g.
+        ``[CHLA, CHLA_MID]`` keeps a mid-processing snapshot in ``CHLA_MID`` while
+        later steps continue working on ``CHLA``.
     slope : float, optional
         Multiplicative factor (default ``1.0``). For a x10 unit conversion, set ``10``.
     intercept : float, optional
@@ -102,10 +105,11 @@ class CorrectValues(BaseStep):
             "description": "Name of the variable to correct (e.g. 'CNDC').",
         },
         "output_as": {
-            "type": str,
+            "type": [str, list],
             "default": None,
-            "description": "Name to write the result under (default: target_variable, "
-                           "i.e. in place). Set to a new name to copy/rename.",
+            "description": "Name(s) to write the result under (default: target_variable, "
+                           "i.e. in place). A new name copies/renames; a list writes the "
+                           "same result under several names (e.g. [CHLA, CHLA_MID]).",
         },
         "slope": {
             "type": float,
@@ -165,7 +169,10 @@ class CorrectValues(BaseStep):
                 f"Available variables: {list(self.data.data_vars)}."
             )
 
-        out = self.output_as or var
+        outs = (
+            list(self.output_as) if isinstance(self.output_as, (list, tuple))
+            else [self.output_as or var]
+        )
         if self.append_description is not None and self.overwrite_description is not None:
             raise ValueError(
                 f"[{self.name}] set only one of 'append_description' / 'overwrite_description'."
@@ -212,9 +219,9 @@ class CorrectValues(BaseStep):
                     f"[{lo}, {hi}]; applying correction."
                 )
 
-        # Nothing changes when there is no scaling, no rename and no comment to set.
+        # Nothing changes when there is no scaling, no rename/copy and no comment to set.
         no_description = self.append_description is None and self.overwrite_description is None
-        if not do_scale and out == var and no_description:
+        if not do_scale and outs == [var] and no_description:
             self.context["data"] = self.data
             return self.context
 
@@ -224,27 +231,32 @@ class CorrectValues(BaseStep):
             corrected[window] = self.slope * vals[window] + self.intercept
             self.applied = True
 
-        # Write to output_as (a copy/rename when it differs from target_variable).
-        self.data[out] = self.data[var].copy(data=corrected)
+        # Write to each output name (a copy/rename when it differs from target_variable).
+        for out in outs:
+            self.data[out] = self.data[var].copy(data=corrected)
+        self._outs = outs
 
+        names = ", ".join(f"'{o}'" for o in outs)
         if self.applied:
             self.log(
-                f"Applied correction to '{out}': corrected = {self.slope} * value + {self.intercept}."
+                f"Applied correction to {names}: corrected = {self.slope} * value + {self.intercept}."
             )
-        if out != var:
-            self.log(f"Wrote '{var}' to '{out}'.")
+        copies = [o for o in outs if o != var]
+        if copies:
+            self.log(f"Wrote '{var}' to {', '.join(repr(o) for o in copies)}.")
 
+        for out in outs:
+            if self.corrected_units is not None:
+                self.data[out].attrs["units"] = self.corrected_units
+            if self.overwrite_description is not None:
+                self.data[out].attrs["comment"] = self.overwrite_description
+            elif self.append_description is not None:
+                existing = self.data[out].attrs.get("comment", "")
+                self.data[out].attrs["comment"] = (
+                    f"{existing} {self.append_description}".strip() if existing else self.append_description
+                )
         if self.corrected_units is not None:
-            self.data[out].attrs["units"] = self.corrected_units
-            self.log(f"Set '{out}' units to '{self.corrected_units}'.")
-
-        if self.overwrite_description is not None:
-            self.data[out].attrs["comment"] = self.overwrite_description
-        elif self.append_description is not None:
-            existing = self.data[out].attrs.get("comment", "")
-            self.data[out].attrs["comment"] = (
-                f"{existing} {self.append_description}".strip() if existing else self.append_description
-            )
+            self.log(f"Set {names} units to '{self.corrected_units}'.")
 
         if self.diagnostics:
             self.plot_diagnostics()
@@ -257,7 +269,7 @@ class CorrectValues(BaseStep):
             return
 
         var = self.target_variable
-        corrected = self.data[var].values
+        corrected = self.data[self._outs[0]].values
 
         # Plot against TIME if available, otherwise against sample index.
         if "TIME" in self.data:

@@ -216,6 +216,16 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "as references."
             ),
         },
+        "max_photic_depth": {
+            "type": float,
+            "default": 100.0,
+            "description": (
+                "Depth (m) bounding the 'thomalla2017' quenching-depth search "
+                "(the photic layer). Matches glidertools' max_photic_depth; unlike "
+                "the euphotic depth ZEU it needs no PAR, so Thomalla runs on gliders "
+                "without a PAR sensor."
+            ),
+        },
     }
 
     # ==================================================================
@@ -255,9 +265,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # chosen one's are present up front. ZEU (euphotic depth) and Z_IPAR
         # (isolume depth) come from a preceding 'Interpolate PAR' step.
         needs_mld = method_key in ("xing2012", "xing2018", "sackmann2008")
-        needs_zeu = method_key in (
-            "biermann2015", "hemsley2015", "thomalla2017", "swart2015",
-        )
+        needs_zeu = method_key in ("biermann2015", "hemsley2015", "swart2015")
         needs_ipar = method_key in ("xing2018",)
         needs_bbp = method_key in (
             "xing2018", "hemsley2015", "thomalla2017", "sackmann2008", "swart2015",
@@ -293,7 +301,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             # median over the 50 shallowest samples of each profile
             self.sun_args = (
                 self.sun_args.groupby("PROFILE_NUMBER", group_keys=True)
-                .apply(lambda x: x.nlargest(50, "DEPTH"), include_groups=False)
+                .apply(lambda x: x.nsmallest(50, "DEPTH"), include_groups=False)
                 .groupby(level="PROFILE_NUMBER")
                 .agg({var: "median" for var in ["TIME", "LATITUDE", "LONGITUDE"]})
             )
@@ -395,6 +403,28 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             profile_indices = np.where(self.data["PROFILE_NUMBER"] == profile_number)
             self.data[self.output_as][profile_indices] = corrected_chla
 
+        if method_key == "thomalla2017":
+            counts = getattr(self, "_thomalla_debug", {})
+            total = counts.get("total", 0)
+            no_qd = counts.get("no_qd", 0)
+            if no_qd:
+                reasons = {
+                    k[len("no_qd:"):]: v for k, v in counts.items() if k.startswith("no_qd:")
+                }
+                breakdown = ", ".join(
+                    f"{k}={v}" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])
+                )
+                ref_no_surface = counts.get("ref_no_surface", 0)
+                extra = (
+                    f" ({ref_no_surface} of their night reference(s) never reach <=5 m depth.)"
+                    if ref_no_surface
+                    else ""
+                )
+                self.log_warn(
+                    f"Thomalla 2017: {no_qd}/{total} daytime profile(s) could not be "
+                    f"corrected (no quenching depth resolved): {breakdown}.{extra}"
+                )
+
         self.reconstruct_data()
         self.update_qc()
 
@@ -451,6 +481,14 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             if np.count_nonzero(np.isfinite(z) & np.isfinite(p) & (p > 0)) < MIN_PTS:
                 missing += 1
         return missing
+
+    def _thomalla_debug_count(self, key):
+        # Per-profile counters behind the thomalla2017 QD-failure warning
+        # (run()): how many daytime profiles corrected vs. why the rest didn't.
+        counts = getattr(self, "_thomalla_debug", None)
+        if counts is None:
+            counts = self._thomalla_debug = {}
+        counts[key] = counts.get(key, 0) + 1
 
     def _resolve_bbp_var(self):
         # Configured bbp_var if present, else the first available fallback (logged);
@@ -594,13 +632,27 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             nights_members.append(current)
 
         night_refs = []
+        raw_shallow, ref_shallow = [], []  # debug: sampled vs. post-QC shallowest depth
         for members in nights_members:
             mask = np.isin(pnum, members)
+            z_raw = z_all[mask]
+            z_raw_finite = z_raw[np.isfinite(z_raw)]
+            if z_raw_finite.size:
+                raw_shallow.append(float(np.min(z_raw_finite)))
             ref = self._bin_night(z_all[mask], fl_all[mask], bbp_all[mask])
             if ref is None:
                 continue
             ref["time"] = float(np.median([times[pn] for pn in members]))
             night_refs.append(ref)
+            ref_shallow.append(float(np.min(ref["z"])))
+        if not quiet and raw_shallow:
+            self.log(
+                f"Thomalla 2017 debug: nightly shallowest sampled DEPTH "
+                f"median={np.median(raw_shallow):.1f}m (min={min(raw_shallow):.1f}m); "
+                f"shallowest usable (post-QC, binned) fl/bbp DEPTH "
+                f"median={np.median(ref_shallow) if ref_shallow else np.nan:.1f}m "
+                f"(min={min(ref_shallow) if ref_shallow else np.nan:.1f}m)."
+            )
 
         day_night = {}
         if night_refs:
@@ -863,7 +915,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         night's mean fl:bbp ratio profile. Above the quenching depth QD,
         fluorescence is reset to ``(Fl_NT/bbp_NT) * bbp_DT``, kept only where that
         raises it. QD comes from the night-minus-day fluorescence difference
-        within the euphotic zone (needs backscatter + ZEU).
+        within the photic layer (shallower than ``max_photic_depth``, following
+        glidertools; needs backscatter, no PAR).
         """
         chlf = np.asarray(profile[self.apply_to].values, dtype=float)
         depth = np.asarray(profile["DEPTH"].values, dtype=float)
@@ -884,20 +937,26 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             return chlf
 
         ref = self._night_refs[ref_idx]
-        zeu = self._profile_scalar(profile, "ZEU")
-        if not np.isfinite(zeu) or zeu <= 0:
-            return chlf
+        self._thomalla_debug_count("total")
+        if float(np.min(ref["z"])) > 5.0:
+            self._thomalla_debug_count("ref_no_surface")
 
-        # Night fl:bbp ratio and mean fluorescence interpolated onto day depths.
-        ratio_at_z = np.interp(depth, ref["z"], ref["ratio"])
-        fl_night_at_z = np.interp(depth, ref["z"], ref["fl"])
+        # Night fl:bbp ratio and mean fluorescence interpolated onto day depths;
+        # NaN outside the night's sampled depth range rather than clamping to the
+        # nearest endpoint, so unsampled depths can't manufacture a night-day diff.
+        ratio_at_z = np.interp(depth, ref["z"], ref["ratio"], left=np.nan, right=np.nan)
+        fl_night_at_z = np.interp(depth, ref["z"], ref["fl"], left=np.nan, right=np.nan)
 
         # QD is derived, so the quenched top of the profile cannot set it if flagged.
-        qd = self._quenching_depth(
-            depth, self._calc_values(profile, self.apply_to), fl_night_at_z, zeu
+        qd, reason = self._quenching_depth(
+            depth, self._calc_values(profile, self.apply_to), fl_night_at_z,
+            self.max_photic_depth,
         )
         if not np.isfinite(qd):
+            self._thomalla_debug_count("no_qd")
+            self._thomalla_debug_count(f"no_qd:{reason}")
             return chlf
+        self._thomalla_debug_count("corrected")
 
         corrected = ratio_at_z * bbp
         chl_corr = np.copy(chlf)
@@ -917,23 +976,36 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return chl_corr
 
     @staticmethod
-    def _quenching_depth(z, fl_day, fl_night, zeu):
-        # Quenching depth QD (positive-down m), Thomalla 2017: within the euphotic
-        # zone the night-day difference D(z) is anchored at its near-surface max
-        # (top 5 m); QD is the deeper point of steepest gradient down to one of the
-        # five smallest |D| or a zero crossing. NaN if unresolvable.
+    def _quenching_depth(z, fl_day, fl_night, max_photic_depth):
+        # Quenching depth QD (positive-down m), Thomalla 2017: within the photic
+        # layer (0 to max_photic_depth), restricted to night > day (fl_diff > 0,
+        # the quenching signal), the difference D(z) is anchored at its near-surface
+        # max (top 5 m); QD is the deeper point of steepest gradient down to one of
+        # the five smallest |D| or a zero crossing. Returns (qd, reason); qd is NaN
+        # if unresolvable, including when there is no near-surface observation to
+        # anchor on. reason is surfaced to the caller for the per-run QD-failure
+        # warning (run()).
         z = np.asarray(z, dtype=float)
         D = np.asarray(fl_night, dtype=float) - np.asarray(fl_day, dtype=float)
-        mask = np.isfinite(z) & np.isfinite(D) & (z >= 0) & (z <= zeu)
+        mask_all = np.isfinite(z) & np.isfinite(D) & (z >= 0) & (z <= max_photic_depth)
+        mask = mask_all & (D > 0)
         if np.sum(mask) < 3:
-            return np.nan
+            # distinguish missing day/night coverage from a genuine lack of a
+            # night > day (quenching) signal in the data that is there
+            reason = (
+                "too_few_valid_points" if np.sum(mask_all) < 3 else "no_positive_diff_signal"
+            )
+            return np.nan, reason
         zz, DD = z[mask], D[mask]
         order = np.argsort(zz)  # surface -> deep
         zz, DD = zz[order], DD[order]
 
-        # Anchor at the largest difference near the surface (top 5 m if present).
+        # Anchor at the largest difference near the surface (top 5 m); without one
+        # there, the quenching layer can't be resolved.
         top = zz <= 5
-        anchor = np.argmax(np.where(top, DD, -np.inf)) if np.any(top) else np.argmax(DD)
+        if not np.any(top):
+            return np.nan, "no_positive_diff_within_5m"
+        anchor = np.argmax(np.where(top, DD, -np.inf))
         z_a, D_a = zz[anchor], DD[anchor]
 
         # Candidates: five smallest |D| deeper than the anchor, plus zero crossings.
@@ -948,14 +1020,14 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             if crossing and zz[i + 1] > z_a:
                 candidates.add(i + 1)
         if not candidates:
-            return np.nan
+            return np.nan, "no_candidates_deeper_than_anchor"
 
         best_qd, best_gradient = np.nan, -np.inf
         for i in candidates:
             gradient = abs(D_a - DD[i]) / (zz[i] - z_a)
             if gradient > best_gradient:
                 best_gradient, best_qd = gradient, float(zz[i])
-        return best_qd
+        return best_qd, "ok"
 
     def apply_xing2018_quenching_correction(self, profile):
         """Xing et al. (2018, *Optics Express*, 26:24734) S08+ NPQ correction,
@@ -1210,7 +1282,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if getattr(self, "_thomalla_day_night", None):
             implemented["thomalla2017"] = (
                 self.apply_thomalla2017_quenching_correction,
-                {self.bbp_var, "ZEU"},
+                {self.bbp_var},
             )
         have = set(self.data_copy.data_vars)
         runnable = {k: fn for k, (fn, needs) in implemented.items() if needs <= have}

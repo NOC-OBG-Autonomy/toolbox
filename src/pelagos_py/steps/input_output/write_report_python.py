@@ -320,6 +320,7 @@ class ReportPDF(FPDF):
         pipeline_name=None,
         pipeline_description=None,
         track_map_path=None,
+        logo_path=None,
     ):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.report_title = title
@@ -328,6 +329,7 @@ class ReportPDF(FPDF):
         self.pipeline_name = pipeline_name
         self.pipeline_description = pipeline_description
         self.track_map_path = track_map_path
+        self.logo_path = logo_path or LOGO_PATH
         #   A roomy bottom margin keeps body content clear of the page-number
         #   footer (which sits ~15 mm from the foot).
         self.set_auto_page_break(auto=True, margin=20)
@@ -368,24 +370,26 @@ class ReportPDF(FPDF):
         self.add_page()
 
         #   NOC logo, centred near the top. Kept small to leave room for the
-        #   title-page track map below.
-        self.ln(16)
+        #   title-page track map below. Spacing here is trimmed as tight as looks
+        #   reasonable: a long step list (in _steps_abstract) can otherwise push
+        #   the title page over onto a second page, which orphans the ToC.
+        self.ln(10)
         logo_w = 20
-        if os.path.exists(LOGO_PATH):
+        if os.path.exists(self.logo_path):
             try:
-                self.image(LOGO_PATH, x=(self.w - logo_w) / 2, w=logo_w)
-                self.ln(logo_w + 6)
+                self.image(self.logo_path, x=(self.w - logo_w) / 2, w=logo_w)
+                self.ln(logo_w + 2)
             except Exception:  # noqa: BLE001 - logo is decorative, never fatal
-                self.ln(16)
+                self.ln(10)
         else:
-            self.ln(16)
+            self.ln(10)
 
         self.set_font("Times", "B", 28)
         self.multi_cell(
             0, 12, sanitize(self.report_title), align="C",
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
-        self.ln(6)
+        self.ln(4)
         if self.report_subtitle:
             self.set_font("Times", "", 16)
             self.multi_cell(
@@ -395,7 +399,7 @@ class ReportPDF(FPDF):
 
         #   Pipeline name and description, straight from the configuration.
         if self.pipeline_name:
-            self.ln(8)
+            self.ln(5)
             self.set_font("Times", "I", 14)
             self.multi_cell(
                 0, 8, sanitize(self.pipeline_name), align="C",
@@ -412,7 +416,7 @@ class ReportPDF(FPDF):
         #   page still fits; omitted silently when no map could be built. The map
         #   is square (1:1), so default to that aspect when it can't be read.
         if self.track_map_path and os.path.exists(self.track_map_path):
-            self.ln(6)
+            self.ln(4)
             aspect = _image_aspect(self.track_map_path, default=1.0)
             map_w, max_h = 130, 72
             if map_w * aspect > max_h:
@@ -420,12 +424,12 @@ class ReportPDF(FPDF):
             self.image(self.track_map_path, x=(self.w - map_w) / 2, w=map_w)
             self.ln(2)
 
-        self.ln(8)
+        self.ln(5)
         self._steps_abstract()
 
         #   Provenance: run date, pelagos-py version, runtime environment and a
         #   project link, grouped together near the foot of the title page.
-        self.ln(10)
+        self.ln(6)
         stamp = long_date(datetime.now(timezone.utc))
         self.set_font("Times", "", 12)
         self.multi_cell(
@@ -1087,7 +1091,14 @@ _CROSS_SECTION_PANELS = (
     },
     {
         "label": "Oxygen",
-        "candidates": ("MOLAR_DOXY", "molar_doxy", "DOXY", "molar_deoxy"),
+        "candidates": (
+            "MOLAR_DOXY_PSAL_PRES",  #   fully corrected output of the oxygen processing chain
+            "MOLAR_DOXY_PSAL",
+            "MOLAR_DOXY",
+            "molar_doxy",
+            "DOXY",
+            "molar_deoxy",
+        ),
         "stops": palettes.SEQUENTIAL["oxygen"],
     },
     {
@@ -1429,42 +1440,14 @@ def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> st
     #   matplotlib date numbers for the shared X axis (NaT -> NaN, ignored).
     x = mdates.date2num(time)
 
-    panels = _CROSS_SECTION_PANELS
-    #   A4-portrait proportions, trimmed a little in height so the "Cross Section
-    #   Plots" heading and the figure sit together on one page. constrained_layout
-    #   lines up every panel with its left profile strip and right colourbar.
-    fig = plt.figure(figsize=(8.27, 10.3), layout="constrained")
-    #   Per row: [narrow profile strip] [main cross-section] [thin colourbar].
-    gs = fig.add_gridspec(len(panels), 3, width_ratios=[0.22, 1.0, 0.045])
-
-    main_axes = []
-    for i, panel in enumerate(panels):
-        ax_prof = fig.add_subplot(gs[i, 0])
-        #   Main panels share the TIME X axis; profile shares the (inverted) PRES
-        #   Y axis with its own main panel.
-        ax_main = fig.add_subplot(
-            gs[i, 1], sharex=main_axes[0] if main_axes else None, sharey=ax_prof
-        )
-        cax = fig.add_subplot(gs[i, 2])
-        main_axes.append(ax_main)
-
-        cmap = LinearSegmentedColormap.from_list(
-            f"xsec_{panel['label'].lower()}", panel["stops"]
-        )
-
+    #   Resolve which panels actually have usable data (variable present in the
+    #   dataset, and not entirely masked out by QC). Panels without any are
+    #   omitted from the figure entirely, rather than drawn as an empty "not
+    #   available" placeholder - e.g. no salinity derived, or no oxygen sensor.
+    resolved_panels = []
+    for panel in _CROSS_SECTION_PANELS:
         cvar = _first_present(data, panel["candidates"])
         if cvar is None:
-            #   Keep the panel (so the layout is fixed at 6 rows) but note the gap.
-            ax_main.text(
-                0.5, 0.5, f"{panel['label']} not available",
-                ha="center", va="center", transform=ax_main.transAxes,
-                fontsize=8, color="0.4",
-            )
-            ax_main.tick_params(labelleft=False)
-            ax_prof.tick_params(labelsize=6)
-            ax_prof.set_ylabel(_var_label(data, pres_name, pres_name), fontsize=7)
-            ax_prof.set_xlabel(panel["label"], fontsize=6)
-            cax.axis("off")
             continue
 
         c = np.asarray(data[cvar].values, dtype=float).ravel()[:n][idx]
@@ -1477,6 +1460,36 @@ def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> st
         if qc_name in data.variables:
             qc = np.asarray(data[qc_name].values, dtype=float).ravel()[:n][idx]
             c = np.where(np.isin(qc, _CS_ALLOWED_QC_FLAGS), c, np.nan)
+
+        if not np.isfinite(c).any():
+            continue
+
+        resolved_panels.append((panel, cvar, c))
+
+    if not resolved_panels:
+        return None
+
+    #   A4-portrait proportions, trimmed a little in height so the "Cross Section
+    #   Plots" heading and the figure sit together on one page. constrained_layout
+    #   lines up every panel with its left profile strip and right colourbar.
+    fig = plt.figure(figsize=(8.27, 10.3), layout="constrained")
+    #   Per row: [narrow profile strip] [main cross-section] [thin colourbar].
+    gs = fig.add_gridspec(len(resolved_panels), 3, width_ratios=[0.22, 1.0, 0.045])
+
+    main_axes = []
+    for i, (panel, cvar, c) in enumerate(resolved_panels):
+        ax_prof = fig.add_subplot(gs[i, 0])
+        #   Main panels share the TIME X axis; profile shares the (inverted) PRES
+        #   Y axis with its own main panel.
+        ax_main = fig.add_subplot(
+            gs[i, 1], sharex=main_axes[0] if main_axes else None, sharey=ax_prof
+        )
+        cax = fig.add_subplot(gs[i, 2])
+        main_axes.append(ax_main)
+
+        cmap = LinearSegmentedColormap.from_list(
+            f"xsec_{panel['label'].lower()}", panel["stops"]
+        )
 
         #   Robust colour limits: percentiles, not raw min/max, so sharp spikes
         #   don't blow out the scale. Guard the all-NaN case.
@@ -1548,7 +1561,7 @@ def cross_section_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None
     pdf.section_heading("Cross Section Plots")
     img = cross_section_figure(data, outdir)
     if img is None:
-        pdf.body("No suitable TIME/PRES data available for cross-section plots.")
+        pdf.body("No suitable TIME/PRES/variable data available for cross-section plots.")
         return
     #   Cap the figure to the space left below the heading so the two stay on one
     #   page (the figure is near-A4 height, so a full-width placement would
@@ -1609,6 +1622,8 @@ class WriteDataReportPython(BaseStep):
         Include the logfile section. Default ``True``.
     show_index : bool, optional
         Include the closing index section. Default ``True``.
+    logo_path : str, optional
+        Path to a logo image for the title page. Defaults to the NOC logo.
 
     Examples
     --------
@@ -1701,6 +1716,11 @@ class WriteDataReportPython(BaseStep):
                 "variable index and glider information."
             ),
         },
+        "logo_path": {
+            "type": str,
+            "default": None,
+            "description": "Path to a logo image for the title page. Defaults to the NOC logo.",
+        },
     }
 
     def run(self) -> xr.DataArray:
@@ -1769,6 +1789,7 @@ class WriteDataReportPython(BaseStep):
                 pipeline_name=glob_params.get("name"),
                 pipeline_description=glob_params.get("description"),
                 track_map_path=track_map_path,
+                logo_path=self.parameters.get("logo_path"),
             )
             pdf.title_page()
 

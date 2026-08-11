@@ -48,6 +48,8 @@ def make_step(sun_angle=40.0, hybrid=True):
     step.bbp_var = "BBP700"
     step.par_var = "DOWNWELLING_PAR"
     step.hybrid = hybrid
+    step.max_photic_depth = 100.0
+    step.day_min_elevation = 0.0
     step._sun_elevation = lambda profile: sun_angle
     return step
 
@@ -218,7 +220,7 @@ def test_quenching_depth_picks_steepest_gradient_point():
     z = np.array([2, 6, 10, 15, 20, 30.0])
     fl_day = np.array([0.4, 0.5, 0.7, 0.9, 1.0, 0.75])
     fl_night = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.75])  # D returns to 0 by depth
-    assert Quenching._quenching_depth(z, fl_day, fl_night, zeu=38.0) == 15.0
+    assert Quenching._quenching_depth(z, fl_day, fl_night, max_photic_depth=38.0) == 15.0
 
 
 def test_thomalla_corrects_above_quenching_depth_and_only_raises():
@@ -234,6 +236,21 @@ def test_thomalla_corrects_above_quenching_depth_and_only_raises():
     out = step.apply_thomalla2017_quenching_correction(prof)
 
     # QD resolves to 15 m; surface lifts to 500*bbp (1.0) where it exceeds the quenched value, deeper unchanged.
+    assert out[:4] == pytest.approx(1.0)
+    assert out[4:].tolist() == chlf[4:].tolist()
+
+
+def test_thomalla_corrects_without_zeu_par():
+    # Thomalla now bounds the QD search by max_photic_depth, so it runs with no PAR/ZEU.
+    z_pos, chlf, bbp = _bbp_profile()
+    prof = make_profile(chlf, z_pos, bbp=bbp, zeu=None)  # ZEU absent (NaN)
+
+    step = make_step()
+    step._night_refs = [{"z": z_pos, "fl": 500.0 * bbp, "ratio": np.full(z_pos.size, 500.0)}]
+    step._thomalla_day_night = {101: 0}
+
+    out = step.apply_thomalla2017_quenching_correction(prof)
+
     assert out[:4] == pytest.approx(1.0)
     assert out[4:].tolist() == chlf[4:].tolist()
 

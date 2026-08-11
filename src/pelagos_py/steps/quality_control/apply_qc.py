@@ -238,8 +238,17 @@ class ApplyQC(BaseStep):
                 attrs["flag_meanings"] = (
                     "NO_QC, GOOD, PROB_GOOD, PROB_BAD, BAD, VALUE_CHANGED, NOT_USED, NOT_USED, ESTIMATED, MISSING"
                 )
-                attrs["long_name"] = f"{parent_attrs['long_name']} quality flag"
-                attrs["standard_name"] = f"{parent_attrs['standard_name']}_flag"
+                parent_long_name = parent_attrs.get("long_name")
+                if parent_long_name is None:
+                    self.log_warn(
+                        f"'{flagged_var[:-3]}' has no 'long_name' attribute; QC flag variable "
+                        f"'{flagged_var}' will be missing its 'long_name' too."
+                    )
+                else:
+                    attrs["long_name"] = f"{parent_long_name} quality flag"
+                parent_standard_name = parent_attrs.get("standard_name")
+                if parent_standard_name is not None:
+                    attrs["standard_name"] = f"{parent_standard_name}_flag"
                 attr_test = qc_qc_name.replace(" ", "_").lower()
                 attrs[f"{attr_test}_flag_cts"] = json.dumps(
                     {i: int(np.sum(var_flags.to_numpy() == i)) for i in range(10)}
