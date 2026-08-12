@@ -114,7 +114,7 @@ class ApplyQC(BaseStep):
         raises
         ------
         KeyError
-            If no QC operations are specified, if requested QC tests are invalid, or esssential variables are missing.
+            If no QC operations are specified, or if requested QC tests are invalid.
         ValueError
             If no data is found in context.
         """
@@ -158,8 +158,8 @@ class ApplyQC(BaseStep):
             #   LATITUDE, LONGITUDE) is not falsely reported as missing.
             present = set(data.variables)
             if not set(all_required_variables).issubset(present):
-                raise KeyError(
-                    f"[Apply QC] The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
+                self.halt(
+                    f"The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
                     f" Make sure that the variables are present in the data, or remove tests from the order."
                 )
         # Convert data to polars for fast processing
