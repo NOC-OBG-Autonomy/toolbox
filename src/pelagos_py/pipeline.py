@@ -405,15 +405,19 @@ class Pipeline(ConfigMirrorMixin):
         # diagnostic code, which is why it can slow the run down.
         report_present = any(s["name"] == REPORT_STEP_NAME for s in self.steps)
         if report_present:
-            #   TODO: Load report settings and see if the user wants to capture diagnostics. If not, don't save the figures in memory.
-            # self._capture_diagnostics = True
-            self._captured_figures = []
-            self._capture_dir = tempfile.mkdtemp(prefix="pelagos_report_diag_")
-            self.logger.warning(
-                "A report step is enabled: diagnostic plots will be generated in "
-                "the background for every step that produces one, so the pipeline "
-                "may run more slowly than usual."
-            )
+            params = next(s["parameters"] for s in self.steps if s["name"] == "Write Data Report (Python)")
+
+            # Load report settings and see if the user wants to capture diagnostics. If not, don't save the figures in memory.
+            # Debugging pdb.trace() unreliable if _capture_diagnostics turned on.
+            if params.get("show_diagnostic_plots") == True:
+                self._capture_diagnostics = True
+                self._captured_figures = []
+                self._capture_dir = tempfile.mkdtemp(prefix="pelagos_report_diag_")
+                self.logger.warning(
+                    "A report step is enabled: diagnostic plots will be generated in "
+                    "the background for every step that produces one, so the pipeline "
+                    "may run more slowly than usual."
+                )
 
         # When capturing for the report, force the headless Agg backend once for
         # the whole run (see force_headless_backend). Toggling the backend per
