@@ -39,6 +39,7 @@ from fpdf.enums import (
 from fpdf.fonts import FontFace
 from datetime import datetime, timezone
 import getpass
+import glob
 import os
 import platform
 import json
@@ -1568,6 +1569,50 @@ def cross_section_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None
     pdf.image_fit(img, aspect=_image_aspect(img), max_h=avail_h)
 
 
+def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
+    """
+    Function is in alpha.
+    
+    Runs plotting routines from `glidertest` and inserts them into the document.
+
+    clone glidertest, then install with `pip install -e .` until versioning is sorted out.
+    """
+    from glidertest import summary_sheet as gss
+    from glidertest import plots as gtplots
+
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Hysteresis diagnostics")
+
+    gss.create_hyst_plots(data, path=outdir)
+    for fig_name in sorted(glob.glob(os.path.join(outdir, "*_hyst.png"))):
+        pdf.image_fit(
+            fig_name,
+            aspect=_image_aspect(fig_name),
+            max_h=100,
+        )
+
+    # breakpoint()
+    gss.create_drift_plots(data, path=outdir)
+    for fig_name in sorted(glob.glob(os.path.join(outdir, "*_drift.png"))):
+        pdf.image_fit(
+            fig_name,
+            aspect=_image_aspect(fig_name),
+            max_h=100,
+        )
+
+    path = outdir
+    # breakpoint()
+    for var in ["TEMP", "CNDC", "DOXY"]:
+        fig, ax = gtplots.plot_updown_bias(data, var=var)
+        fig_name = f"{path}/{var}_updown.png"
+        fig.savefig(fig_name)
+        # breakpoint()
+        pdf.image_fit(
+            fig_name,
+            aspect=_image_aspect(fig_name),
+            max_h=100,
+        )
+
 @register_step
 class WriteDataReportPython(BaseStep):
     """
@@ -1719,7 +1764,15 @@ class WriteDataReportPython(BaseStep):
                 "Path to where the organization/institution logo is for use "
                 "on the front page."
             )
+        },
+        "show_glidertest": {
+            "type": bool,
+            "default": False,
+            "description": (
+                "Generate additional figures as done in glidertest's summary sheet."
+            )
         }
+
     }
 
     def run(self) -> xr.DataArray:
@@ -1802,6 +1855,10 @@ class WriteDataReportPython(BaseStep):
             if self.parameters.get("show_cross_section_plots", True):
                 self.log("Generating cross-section plots.")
                 cross_section_section(pdf, data, outdir=fig_dir)
+
+            if self.parameters.get("show_glidertest", True):
+                self.log("Generating figures from glidertest.")
+                glidertest_section(pdf, data, fig_dir)
 
             if (
                 self.parameters.get("show_format_check", True)
