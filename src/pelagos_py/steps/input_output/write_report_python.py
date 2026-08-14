@@ -318,6 +318,7 @@ class ReportPDF(FPDF):
         pipeline_name=None,
         pipeline_description=None,
         track_map_path=None,
+        logo=None,
     ):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.report_title = title
@@ -326,6 +327,7 @@ class ReportPDF(FPDF):
         self.pipeline_name = pipeline_name
         self.pipeline_description = pipeline_description
         self.track_map_path = track_map_path
+        self.logo = logo
         #   A roomy bottom margin keeps body content clear of the page-number
         #   footer (which sits ~15 mm from the foot).
         self.set_auto_page_break(auto=True, margin=20)
@@ -358,16 +360,17 @@ class ReportPDF(FPDF):
         #   Centred title page (title, subtitle, steps, date). The report uses the
         #   Times core font throughout for a traditional, LaTeX-like look.
         self.add_page()
-
         #   NOC logo, centred near the top. Kept small to leave room for the
         #   title-page track map below.
         self.ln(16)
-        logo_w = 20
-        if os.path.exists(LOGO_PATH):
+        logo_w = 20 #   TODO: Make user-configurable
+        
+        if os.path.exists(self.logo):
             try:
-                self.image(LOGO_PATH, x=(self.w - logo_w) / 2, w=logo_w)
+                self.image(self.logo, x=(self.w - logo_w) / 2, w=logo_w)
                 self.ln(logo_w + 6)
             except Exception:  # noqa: BLE001 - logo is decorative, never fatal
+                print(f"Report generation: Logo: Logo path does not exist: {self.logo}")
                 self.ln(16)
         else:
             self.ln(16)
@@ -1065,55 +1068,58 @@ _MAP_START = "#9fe0a0"
 #   LinearSegmentedColormap. ``special`` flags BBP, which is drawn largest-on-top
 #   with smaller markers so its sharp spikes surface rather than hide behind
 #   ordinary points.
+
+try:
+    #   Add stops that are based on cmocean. Total of 10 stops.
+    import cmocean
+    import matplotlib.colors as mcolors
+    def sample_cmap(cmap, n=10):
+        return [mcolors.to_hex(c) for c in cmap(np.linspace(0, 1, n))]
+    temp_stops = sample_cmap(cmocean.cm.thermal)
+    sal_stops = sample_cmap(cmocean.cm.haline)
+    dens_stops = sample_cmap(cmocean.cm.dense)
+    oxy_stops = sample_cmap(cmocean.cm.oxy)
+    chl_stops = sample_cmap(cmocean.cm.algae)
+    bbp_stops = sample_cmap(cmocean.cm.turbid)
+except ImportError:
+    temp_stops = ["#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd", "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",]
+    sal_stops = ["#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58","#b2425c", "#943061", "#732460", "#511c53", "#321340",]
+    dens_stops = ["#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f","#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",]
+    oxy_stops = ["#400000", "#5c0000", "#780000", "#808080", "#8c8c8c", "#979797","#a3a3a3", "#aeaeae", "#baba10", "#dbdb0a", "#fdfd00",]
+    chl_stops = ["#182548", "#2c5398", "#4a88a4", "#87b8b5", "#dae4da","#e6d992", "#a8ab3e", "#56872e", "#285932", "#1b2617",]
+    bbp_stops = ["#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7","#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",]
+
 _CROSS_SECTION_PANELS = (
     {
         "label": "Temperature",
         "candidates": ("TEMP", "TEMPERATURE", "temp"),
-        "stops": [
-            "#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd",
-            "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",
-        ],
+        "stops": temp_stops,
     },
     {
         "label": "Salinity",
         "candidates": ("PRAC_SALINITY", "ABS_SALINITY", "PSAL", "SALINITY", "salinity"),
-        "stops": [
-            "#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58",
-            "#b2425c", "#943061", "#732460", "#511c53", "#321340",
-        ],
+        "stops": sal_stops,
     },
     {
         "label": "Density",
         "candidates": ("DENSITY", "density", "SIGMA0", "SIGMA_THETA", "POTDENS"),
-        "stops": [
-            "#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f",
-            "#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",
-        ],
+        "stops": dens_stops,
     },
     {
         "label": "Oxygen",
         "candidates": ("MOLAR_DOXY", "molar_doxy", "DOXY", "molar_deoxy"),
-        "stops": [
-            "#400000", "#5c0000", "#780000", "#808080", "#8c8c8c", "#979797",
-            "#a3a3a3", "#aeaeae", "#baba10", "#dbdb0a", "#fdfd00",
-        ],
+        "stops": oxy_stops,
     },
     {
         "label": "Chlorophyll",
         "candidates": ("CHLA_ADJUSTED", "CHLA", "chla_adjusted", "CHLOROPHYLL"),
-        "stops": [
-            "#182548", "#2c5398", "#4a88a4", "#87b8b5", "#dae4da",
-            "#e6d992", "#a8ab3e", "#56872e", "#285932", "#1b2617",
-        ],
+        "stops": chl_stops,
     },
     {
         "label": "Backscatter",
         "candidates": ("BBP700", "BBP532", "BBP", "bbp"),
         "special": "bbp",
-        "stops": [
-            "#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7",
-            "#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",
-        ],
+        "stops": bbp_stops,
     },
 )
 
@@ -1378,6 +1384,7 @@ def make_plots(
         and var[:-3] in data.data_vars
         and np.issubdtype(data[var[:-3]].dtype, np.number)
     ]
+    qc_vars.sort()  #   Alphabetize QC plots by variable
 
     #   Only label the plots with the dataset ID when a real one is present; the
     #   placeholder set upstream for files without one should not be shown.
@@ -1705,6 +1712,14 @@ class WriteDataReportPython(BaseStep):
                 "variable index and glider information."
             ),
         },
+        "logo": {
+            "type": str,
+            "default": str(LOGO_PATH),
+            "description": (
+                "Path to where the organization/institution logo is for use "
+                "on the front page."
+            )
+        }
     }
 
     def run(self) -> xr.DataArray:
@@ -1712,7 +1727,6 @@ class WriteDataReportPython(BaseStep):
         odir = self.context["global_parameters"]["out_directory"]
         data = self.context.get("data")
         fname_core = self.context["global_parameters"]["filename_core"]
-
         #   Handle optional parameters
         fname = self.parameters.get("fname")
         if not fname:
@@ -1724,6 +1738,8 @@ class WriteDataReportPython(BaseStep):
         title = self.parameters.get("title")
         if not title:
             title = f"Data report {fname_core.replace('_', ' ')}"
+
+        logo = self.parameters.get("logo")
 
         #   Only show the dataset ID subtitle when one is actually present.
         has_dataset_id = bool(data.attrs.get("dataset_id"))
@@ -1773,6 +1789,7 @@ class WriteDataReportPython(BaseStep):
                 pipeline_name=glob_params.get("name"),
                 pipeline_description=glob_params.get("description"),
                 track_map_path=track_map_path,
+                logo=logo,
             )
             pdf.title_page()
 
