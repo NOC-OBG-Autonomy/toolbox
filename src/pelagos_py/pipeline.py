@@ -405,7 +405,8 @@ class Pipeline(ConfigMirrorMixin):
         # diagnostic code, which is why it can slow the run down.
         report_present = any(s["name"] == REPORT_STEP_NAME for s in self.steps)
         if report_present:
-            self._capture_diagnostics = True
+            #   TODO: Load report settings and see if the user wants to capture diagnostics. If not, don't save the figures in memory.
+            # self._capture_diagnostics = True
             self._captured_figures = []
             self._capture_dir = tempfile.mkdtemp(prefix="pelagos_report_diag_")
             self.logger.warning(
