@@ -434,8 +434,10 @@ class Pipeline(ConfigMirrorMixin):
         finally:
             if report_present:
                 #   Figures have been embedded by the report writer by now.
-                shutil.rmtree(self._capture_dir, ignore_errors=True)
-                self._capture_diagnostics = False
+                params = next(s["parameters"] for s in self.steps if s["name"] == "Write Data Report (Python)")
+                if params.get("show_diagnostic_plots") == True:
+                    shutil.rmtree(self._capture_dir, ignore_errors=True)
+                    self._capture_diagnostics = False
 
     def generate_config(self):
         """
