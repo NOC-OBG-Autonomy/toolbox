@@ -1580,6 +1580,70 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
     from glidertest import summary_sheet as gss
     from glidertest import plots as gtplots
 
+    #   TODO: Modularize this with extra config?
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Basic Variables")
+
+    data["PSAL"] = data["PRAC_SALINITY"]
+
+    fig, __ = gtplots.plot_basic_vars(ds=data)
+    fig_name = f"{outdir}_basic_vars.png"
+    fig.savefig(fig_name)
+    pdf.image_fit(
+        fig_name,
+        aspect=_image_aspect(fig_name),
+        max_h=100
+    )
+
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Up/Down bias")
+
+    for var in ["TEMP", "CNDC", "DOXY"]:
+        fig, __ = gtplots.plot_updown_bias(data, var=var)
+        fig_name = f"{outdir}{var}_updown.png"
+        fig.savefig(fig_name)
+        pdf.image_fit(
+            fig_name,
+            aspect=_image_aspect(fig_name),
+            max_h=100,
+        )
+
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Optics assessment")
+
+    #   This step has an output - capture it
+    fig, __ = gtplots.process_optics_assess(ds=data)
+    fig_name = f"{outdir}_optics_assess.png"
+    fig.savefig(fig_name)
+    pdf.image_fit(
+        fig_name,
+        aspect=_image_aspect(fig_name),
+        max_h=100
+    )
+
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Day/night")
+
+    #   Long run duration
+    data = data.set_coords("TIME")
+    # fig, __ = gtplots.plot_daynight_avg(ds=data, var="CNDC")
+    # fig_name = f"{outdir}_daynight_avg_sal.png"
+    # fig.savefig(fig_name)
+    # pdf.image_fit(
+    #     fig_name,
+    #     aspect=_image_aspect(fig_name),
+    #     max_h=100
+    # )
+
+    fig, __ = gtplots.plot_daynight_avg(ds=data, var="CHLA")
+    fig_name = f"{outdir}_daynight_avg_sal.png"
+    fig.savefig(fig_name)
+    pdf.image_fit(
+        fig_name,
+        aspect=_image_aspect(fig_name),
+        max_h=100
+    )
+
     pdf.add_page()
     pdf.section_heading("Glidertest Plots: Hysteresis diagnostics")
 
@@ -1591,7 +1655,8 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
             max_h=100,
         )
 
-    # breakpoint()
+    pdf.add_page()
+    pdf.section_heading("Glidertest Plots: Drift plots")
     gss.create_drift_plots(data, path=outdir)
     for fig_name in sorted(glob.glob(os.path.join(outdir, "*_drift.png"))):
         pdf.image_fit(
@@ -1600,18 +1665,6 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
             max_h=100,
         )
 
-    path = outdir
-    # breakpoint()
-    for var in ["TEMP", "CNDC", "DOXY"]:
-        fig, ax = gtplots.plot_updown_bias(data, var=var)
-        fig_name = f"{path}/{var}_updown.png"
-        fig.savefig(fig_name)
-        # breakpoint()
-        pdf.image_fit(
-            fig_name,
-            aspect=_image_aspect(fig_name),
-            max_h=100,
-        )
 
 @register_step
 class WriteDataReportPython(BaseStep):
