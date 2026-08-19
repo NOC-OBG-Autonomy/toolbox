@@ -1082,7 +1082,7 @@ try:
     oxy_stops = sample_cmap(cmocean.cm.oxy)
     chl_stops = sample_cmap(cmocean.cm.algae)
     bbp_stops = sample_cmap(cmocean.cm.turbid)
-except ImportError:
+except Exception:
     temp_stops = ["#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd", "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",]
     sal_stops = ["#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58","#b2425c", "#943061", "#732460", "#511c53", "#321340",]
     dens_stops = ["#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f","#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",]
@@ -1236,7 +1236,7 @@ def glider_track_map(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
 
     proj = ccrs.PlateCarree()
     #   Square figure (1:1) so the map renders proportionally on the title page.
-    fig = plt.figure(figsize=(6, 6))
+    fig = plt.figure(figsize=(6, 6),)
     ax = fig.add_subplot(1, 1, 1, projection=proj)
     fig.patch.set_facecolor(_MAP_OCEAN)
     ax.set_facecolor(_MAP_OCEAN)
@@ -1258,9 +1258,10 @@ def glider_track_map(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
             break
         except Exception:  # noqa: BLE001 - try the next scale, else skip the basemap
             continue
-
+    
     try:
         gl = ax.gridlines(
+            crs=ccrs.PlateCarree(),
             draw_labels=True, linewidth=0.4, color=_MAP_GRID,
             alpha=0.4, linestyle=":",
         )
@@ -1286,7 +1287,10 @@ def glider_track_map(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
     #   The track's brightening gold already shows direction of travel (oldest
     #   faint -> newest bright), so no start/end/position marker is drawn.
 
-    fig.tight_layout(pad=0.3)
+    #   fig.tight_layout(pad=x) may not play nice with ax.gridlines(...,draw_labels=True,...)
+    #   for some datasets, erroring out when rendered on plt.savefig.
+    # fig.tight_layout(pad=0.3)
+    fig.subplots_adjust(left=0.10, right=0.97, bottom=0.04, top=0.98)
     fname = outdir + "glider_track" + ext
     plt.savefig(fname, dpi=200, facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -1589,6 +1593,7 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
     fig, __ = gtplots.plot_basic_vars(ds=data)
     fig_name = f"{outdir}_basic_vars.png"
     fig.savefig(fig_name)
+    plt.close(fig)
     pdf.image_fit(
         fig_name,
         aspect=_image_aspect(fig_name),
@@ -1602,6 +1607,7 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
         fig, __ = gtplots.plot_updown_bias(data, var=var)
         fig_name = f"{outdir}{var}_updown.png"
         fig.savefig(fig_name)
+        plt.close(fig)
         pdf.image_fit(
             fig_name,
             aspect=_image_aspect(fig_name),
@@ -1615,6 +1621,7 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
     fig, __ = gtplots.process_optics_assess(ds=data)
     fig_name = f"{outdir}_optics_assess.png"
     fig.savefig(fig_name)
+    plt.close(fig)
     pdf.image_fit(
         fig_name,
         aspect=_image_aspect(fig_name),
@@ -1638,12 +1645,14 @@ def glidertest_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None:
     fig, __ = gtplots.plot_daynight_avg(ds=data, var="CHLA")
     fig_name = f"{outdir}_daynight_avg_sal.png"
     fig.savefig(fig_name)
+    plt.close(fig)
     pdf.image_fit(
         fig_name,
         aspect=_image_aspect(fig_name),
         max_h=100
     )
 
+    #   Summary sheet batch plots (do not export fig, ax)
     pdf.add_page()
     pdf.section_heading("Glidertest Plots: Hysteresis diagnostics")
 
@@ -1910,9 +1919,11 @@ class WriteDataReportPython(BaseStep):
                 cross_section_section(pdf, data, outdir=fig_dir)
 
             if self.parameters.get("show_glidertest", True):
-                self.log("Generating figures from glidertest.")
-                glidertest_section(pdf, data, fig_dir)
-
+                try:
+                    self.log("Generating figures from glidertest.")
+                    glidertest_section(pdf, data, fig_dir)
+                except ImportError as err:
+                    self.log_warn(f"`glidertest` not installed (err: {err}).\nSkipping glidertest figure generation.")
             if (
                 self.parameters.get("show_format_check", True)
                 and "Format Checker" in step_names
@@ -1933,7 +1944,7 @@ class WriteDataReportPython(BaseStep):
                 qc_section(pdf, data)
 
             if self.parameters.get("show_qc_plots", True):
-                self.log("Generating images.")
+                self.log("Generating iterative QC images.")
                 make_plots(pdf, data, outdir=fig_dir)
 
             if self.parameters.get("show_logs", True):
