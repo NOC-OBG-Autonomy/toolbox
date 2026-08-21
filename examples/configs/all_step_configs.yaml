@@ -356,43 +356,24 @@ steps:
       # [depth_column]:
       #   Depth or pressure column used for the analysis.
       depth_column: PRES
-      # [time_window_seconds]:
-      #   Time window (seconds) used for resampling and smoothing of depth/velocity/acceleration.
-      time_window_seconds: 30
-      # [is_propelled]:
-      #   Target phase for near-horizontal transects: true -> propelled (6), false -> parking (4),
-      #   or "auto" to decide from the dataset `id` attribute ("ALR" -> propelled, else parking).
-      is_propelled: "auto"
+      # [smoothing_window_seconds]:
+      #   Rolling-mean window (seconds) applied to depth before differentiating.
+      smoothing_window_seconds: 30
       # [velocity_threshold]:
-      #   Vertical velocity (m/s) above which a sample is flagged as ascent/descent.
+      #   Vertical velocity (depth units/s) a smoothed sample must exceed to count as moving.
       velocity_threshold: 0.033
-      # [acceleration_threshold]:
-      #   Maximum absolute acceleration for a sample to count as a stable horizontal (transect) phase.
-      acceleration_threshold: 0.0005
-      # [transition_buffer_seconds]:
-      #   Buffer (seconds) trimmed from each end of a continuous ascent/descent/transect block.
-      transition_buffer_seconds: 30
-      # [min_duration_minutes]:
-      #   Minimum duration (minutes) for a phase block to be kept.
-      min_duration_minutes: 5
-      # [peak_prominence]:
-      #   Topographic prominence (depth units) a turning point must have to be flagged as an inflection.
-      peak_prominence: 20
-      # [min_samples_between_peaks]:
-      #   Minimum number of bins required between detected inflection peaks.
-      min_samples_between_peaks: 20
+      # [min_duration_seconds]:
+      #   Minimum seconds for an ascent/descent/surfacing run to be trusted.
+      min_duration_seconds: 60
       # [gap_threshold_minutes]:
-      #   A time gap longer than this (minutes) splits the record into disconnected chunks for inflection detection.
+      #   A time gap longer than this (minutes) splits the record into disconnected chunks.
       gap_threshold_minutes: 5
-      # [surface_depth]:
-      #   Depth (depth units) below which data is treated as general surface operation when searching for inflections.
-      surface_depth: 20
-      # [surfacing_threshold]:
-      #   Strict depth threshold below which inflection/transect points are reclassified as surfacing (phase 3).
-      surfacing_threshold: 5
-      # [parking_gradient_threshold]:
-      #   Absolute depth gradient (m/s) above which a drifting parking/propelled block is converted back to ascent/descent.
-      parking_gradient_threshold: 0.005
+      # [surfacing_depth_threshold]:
+      #   Depth below which a propelled/turn run is classified surfacing instead.
+      surfacing_depth_threshold: 2.0
+      # [min_transect_duration_seconds]:
+      #   Minimum duration for an unknown run to be classified propelled.
+      min_transect_duration_seconds: 300
     # [diagnostics]:
     #   If true, plots a static two-panel figure: the phase classification (DEPTH-TIME
     #   coloured by SCI_PHASE) and the derived PROFILE_NUMBER / CYCLE numbering.
