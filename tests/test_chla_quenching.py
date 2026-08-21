@@ -203,7 +203,7 @@ def test_hemsley_no_regression_returns_unchanged():
     assert np.array_equal(step.apply_hemsley2015_quenching_correction(prof), chlf)
 
 
-# --- Thomalla 2017 ---------------------------------------------------------
+# --- Thomalla 2018 ---------------------------------------------------------
 
 
 def test_bin_night_averages_ratio_per_depth_bin():
@@ -233,7 +233,7 @@ def test_thomalla_corrects_above_quenching_depth_and_only_raises():
     step._night_refs = [{"z": z_pos, "fl": 500.0 * bbp, "ratio": np.full(z_pos.size, 500.0)}]
     step._thomalla_day_night = {101: 0}
 
-    out = step.apply_thomalla2017_quenching_correction(prof)
+    out = step.apply_thomalla2018_quenching_correction(prof)
 
     # QD resolves to 15 m; surface lifts to 500*bbp (1.0) where it exceeds the quenched value, deeper unchanged.
     assert out[:4] == pytest.approx(1.0)
@@ -249,7 +249,7 @@ def test_thomalla_corrects_without_zeu_par():
     step._night_refs = [{"z": z_pos, "fl": 500.0 * bbp, "ratio": np.full(z_pos.size, 500.0)}]
     step._thomalla_day_night = {101: 0}
 
-    out = step.apply_thomalla2017_quenching_correction(prof)
+    out = step.apply_thomalla2018_quenching_correction(prof)
 
     assert out[:4] == pytest.approx(1.0)
     assert out[4:].tolist() == chlf[4:].tolist()
@@ -262,7 +262,7 @@ def test_thomalla_unmapped_profile_returns_unchanged():
     step = make_step()
     step._night_refs = []
     step._thomalla_day_night = {}  # this profile has no paired night
-    assert np.array_equal(step.apply_thomalla2017_quenching_correction(prof), chlf)
+    assert np.array_equal(step.apply_thomalla2018_quenching_correction(prof), chlf)
 
 
 # --- Sackmann 2008 / Swart 2015 -------------------------------------------

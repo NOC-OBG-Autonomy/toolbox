@@ -365,7 +365,7 @@ steps:
 # ===========================================================
 # QC the PAR input to the quenching step below. Deliberately NO lower bound:
 # more than half the PAR record is negative, which is night and depth, not bad
-# data - and thomalla2017 builds its fl:bbp ratio from the night profiles, so
+# data - and thomalla2018 builds its fl:bbp ratio from the night profiles, so
 # flagging those away would break the method. Only a physically impossible high
 # reading (solar max is around 2500) and a frozen sensor are flagged.
   - name: Apply QC
@@ -416,17 +416,6 @@ steps:
               4: [-0.2, 100, outside]
     diagnostics: false
 
-# Spike-test CHLA (per-profile MAD-style residual test).
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        spike qc:
-          variables:
-            CHLA: 2
-          window_size: 50
-          plot: [CHLA]
-    diagnostics: false
-
 # Chlorophyll fluorescence needs two corrections. First, a deep (dark-offset)
 # correction removes the sensor's baseline drift. The dark value is the residual
 # fluorescence measured deep down where there should be no chlorophyll, so it is
@@ -444,7 +433,7 @@ steps:
 # (2). DEPTH itself is not flagged, and the Argo merge means the 2 can't
 # downgrade a 3/4 from the range or spike tests above. The quenching step below
 # then leaves the top 2 m out of its calculations while still correcting it.
-# Kept at 2 m (not 5): thomalla2017 needs at least one calc-eligible CHLA point
+# Kept at 2 m (not 5): thomalla2018 needs at least one calc-eligible CHLA point
 # within its own 5 m surface-anchor window, so this can't reach/exceed that.
 # CHLA_ADJUSTED is flagged too, not just CHLA: Deep Correction has already run,
 # so the quenching step reads CHLA_ADJUSTED and gates on CHLA_ADJUSTED_QC.
@@ -462,12 +451,12 @@ steps:
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The
-# thomalla2017 method builds a per-night fluorescence:backscatter ratio profile
+# thomalla2018 method builds a per-night fluorescence:backscatter ratio profile
 # and applies it to the following day's profiles, so it needs the BBP and PAR
 # variables produced/loaded above.
   - name: CHLA Quenching
     parameters:
-      method: thomalla2017
+      method: thomalla2018
     diagnostics: false
 
 # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep and

@@ -292,7 +292,7 @@ steps:
 # ===========================================================
 # ALR carries no PAR, so the PAR QC / Interpolate PAR steps and the PAR-based
 # quenching methods are omitted. Quenching below uses the MLD-based 'xing2012'
-# method instead of Nelson/Churchill's PAR-dependent 'thomalla2017'.
+# method instead of Nelson/Churchill's PAR-dependent 'thomalla2018'.
 
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped
@@ -310,17 +310,6 @@ steps:
           variable_ranges:
             CHLA:
               4: [-0.2, 100, outside]
-    diagnostics: false
-
-# Spike-test CHLA (per-profile MAD-style residual test).
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        spike qc:
-          variables:
-            CHLA: 2
-          window_size: 50
-          plot: [CHLA]
     diagnostics: false
 
 # Chlorophyll fluorescence needs two corrections. First, a deep (dark-offset)

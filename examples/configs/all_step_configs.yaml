@@ -480,7 +480,7 @@ steps:
       #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
       #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018'
       #   (backscatter-based, needs BBP + PAR + MLD; see 'hybrid'), 'hemsley2015'
-      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2017'
+      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2018'
       #   (per-night fl:bbp ratio profile, needs BBP + PAR), 'sackmann2008' (max
       #   fl:bbp ratio within the MLD, needs BBP + MLD) and 'swart2015' (max fl:bbp
       #   ratio within the euphotic zone, needs BBP + PAR).

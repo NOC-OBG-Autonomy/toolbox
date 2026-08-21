@@ -37,7 +37,7 @@ CALC_SUFFIX = "__FOR_CALC"  # suffix of the QC-masked calculation-only copies; s
 # baseline preferred, raw BBP as fallbacks); the step halts if none are present.
 BBP_VAR_FALLBACKS = ["BBP700_BASELINE", "BBP700", "BBP532_BASELINE", "BBP532"]
 
-# Night-reference tuning ('hemsley2015'/'thomalla2017').
+# Night-reference tuning ('hemsley2015'/'thomalla2018').
 NIGHT_REF_BIN_METRES = 1.0  # depth bin (m) for averaging nighttime profiles.
 HEMSLEY_REGRESSION_DEPTH = 60.0  # top-of-water depth (m) the Hemsley regression is fit over.
 
@@ -124,7 +124,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         "biermann2015",
         "xing2018",
         "hemsley2015",
-        "thomalla2017",
+        "thomalla2018",
         "swart2015",
         "sackmann2008",
     }
@@ -140,7 +140,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "biermann2015",
                 "hemsley2015",
                 "swart2015",
-                "thomalla2017",
+                "thomalla2018",
                 "xing2018",
             ],
             "description": (
@@ -148,7 +148,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 "'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018' "
                 "(backscatter-based, needs BBP + PAR + MLD; see 'hybrid'), "
                 "'hemsley2015' (global night fluorescence-bbp regression, needs BBP + PAR), "
-                "'thomalla2017' (per-night fl:bbp ratio profile, needs BBP + PAR), "
+                "'thomalla2018' (per-night fl:bbp ratio profile, needs BBP + PAR), "
                 "'sackmann2008' (max fl:bbp ratio within the MLD, needs BBP + MLD) and "
                 "'swart2015' (max fl:bbp ratio within the euphotic zone, needs BBP + PAR)."
             ),
@@ -175,7 +175,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "type": str,
             "default": "BBP700_BASELINE",
             "description": (
-                "Backscatter variable used by 'xing2018'/'thomalla2017'/"
+                "Backscatter variable used by 'xing2018'/'thomalla2018'/"
                 "'hemsley2015'/'sackmann2008'/'swart2015'. Defaults to the despiked "
                 "'BBP700_BASELINE'; if that is "
                 "absent the step falls back through "
@@ -209,7 +209,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "description": (
                 "Solar elevation (degrees) below which a profile counts as "
                 "nighttime; only these profiles inform the night "
-                "fluorescence:bbp references used by 'hemsley2015'/'thomalla2017'. "
+                "fluorescence:bbp references used by 'hemsley2015'/'thomalla2018'. "
                 "Default 0.0; lower it (e.g. -5) to build references only from "
                 "profiles well after dusk. Profiles between night_max_elevation "
                 "and day_min_elevation (twilight) are neither corrected nor used "
@@ -220,7 +220,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "type": float,
             "default": 100.0,
             "description": (
-                "Depth (m) bounding the 'thomalla2017' quenching-depth search "
+                "Depth (m) bounding the 'thomalla2018' quenching-depth search "
                 "(the photic layer). Matches glidertools' max_photic_depth; unlike "
                 "the euphotic depth ZEU it needs no PAR, so Thomalla runs on gliders "
                 "without a PAR sensor."
@@ -250,7 +250,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "biermann2015": self.apply_biermann2015_quenching_correction,
             "hemsley2015": self.apply_hemsley2015_quenching_correction,
             "xing2018": self.apply_xing2018_quenching_correction,
-            "thomalla2017": self.apply_thomalla2017_quenching_correction,
+            "thomalla2018": self.apply_thomalla2018_quenching_correction,
             "swart2015": self.apply_swart2015_quenching_correction,
             "sackmann2008": self.apply_sackmann2008_quenching_correction,
         }
@@ -268,7 +268,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         needs_zeu = method_key in ("biermann2015", "hemsley2015", "swart2015")
         needs_ipar = method_key in ("xing2018",)
         needs_bbp = method_key in (
-            "xing2018", "hemsley2015", "thomalla2017", "sackmann2008", "swart2015",
+            "xing2018", "hemsley2015", "thomalla2018", "sackmann2008", "swart2015",
         )
         missing = []
         if needs_mld and "MLD" not in self.data.data_vars:
@@ -340,14 +340,14 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         # the whole uncorrected dataset (the per-profile loop sees one profile at a
         # time). With diagnostics on, build both so they can be scored in the
         # comparison panel even when neither is the configured method.
-        build_refs = {method_key} & {"hemsley2015", "thomalla2017"}
+        build_refs = {method_key} & {"hemsley2015", "thomalla2018"}
         if (
             self.diagnostics
             and hasattr(self, "sun_args")
             and self.bbp_var in self.data.data_vars
             and "ZEU" in self.data.data_vars
         ):
-            build_refs |= {"hemsley2015", "thomalla2017"}
+            build_refs |= {"hemsley2015", "thomalla2018"}
         for ref_method in build_refs:
             self._build_night_references(ref_method, quiet=self.diagnostics)
 
@@ -403,7 +403,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             profile_indices = np.where(self.data["PROFILE_NUMBER"] == profile_number)
             self.data[self.output_as][profile_indices] = corrected_chla
 
-        if method_key == "thomalla2017":
+        if method_key == "thomalla2018":
             counts = getattr(self, "_thomalla_debug", {})
             total = counts.get("total", 0)
             no_qd = counts.get("no_qd", 0)
@@ -421,7 +421,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                     else ""
                 )
                 self.log_warn(
-                    f"Thomalla 2017: {no_qd}/{total} daytime profile(s) could not be "
+                    f"Thomalla 2018: {no_qd}/{total} daytime profile(s) could not be "
                     f"corrected (no quenching depth resolved): {breakdown}.{extra}"
                 )
 
@@ -483,7 +483,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         return missing
 
     def _thomalla_debug_count(self, key):
-        # Per-profile counters behind the thomalla2017 QD-failure warning
+        # Per-profile counters behind the thomalla2018 QD-failure warning
         # (run()): how many daytime profiles corrected vs. why the rest didn't.
         counts = getattr(self, "_thomalla_debug", None)
         if counts is None:
@@ -565,7 +565,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     def _build_night_references(self, method_key, quiet=False):
         # Build the nighttime references, once, before the per-profile loop:
         #   hemsley2015  -> one global night fl-vs-bbp regression (self._hemsley_regression)
-        #   thomalla2017 -> per-night depth-binned fl:bbp profiles (self._night_refs),
+        #   thomalla2018 -> per-night depth-binned fl:bbp profiles (self._night_refs),
         #                   each day profile mapped to its most recent preceding night
         #                   (self._thomalla_day_night); earliest days use the next night.
         pns = [int(p) for p in self.sun_args.index]
@@ -620,7 +620,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 )
             return
 
-        # thomalla2017: group consecutive nighttime profiles into nights.
+        # thomalla2018: group consecutive nighttime profiles into nights.
         nights_members, current = [], []
         for pn in pns_time:
             if is_night[pn]:
@@ -647,7 +647,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             ref_shallow.append(float(np.min(ref["z"])))
         if not quiet and raw_shallow:
             self.log(
-                f"Thomalla 2017 debug: nightly shallowest sampled DEPTH "
+                f"Thomalla 2018 debug: nightly shallowest sampled DEPTH "
                 f"median={np.median(raw_shallow):.1f}m (min={min(raw_shallow):.1f}m); "
                 f"shallowest usable (post-QC, binned) fl/bbp DEPTH "
                 f"median={np.median(ref_shallow) if ref_shallow else np.nan:.1f}m "
@@ -671,7 +671,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         self._thomalla_day_night = day_night
         if not quiet:
             self.log(
-                f"Thomalla 2017: built {len(night_refs)} nighttime fl:bbp reference "
+                f"Thomalla 2018: built {len(night_refs)} nighttime fl:bbp reference "
                 f"profile(s) covering {len(day_night)} day profile(s)."
             )
 
@@ -908,8 +908,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         """
         return self._apply_max_ratio_correction(profile, window="zeu")
 
-    def apply_thomalla2017_quenching_correction(self, profile):
-        """Thomalla et al. (2017, *L&O: Methods*, 16:132) NPQ correction.
+    def apply_thomalla2018_quenching_correction(self, profile):
+        """Thomalla et al. (2018, *L&O: Methods*, 16:132) NPQ correction.
 
         Each daytime profile is corrected against its most recent preceding
         night's mean fl:bbp ratio profile. Above the quenching depth QD,
@@ -977,7 +977,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
 
     @staticmethod
     def _quenching_depth(z, fl_day, fl_night, max_photic_depth):
-        # Quenching depth QD (positive-down m), Thomalla 2017: within the photic
+        # Quenching depth QD (positive-down m), Thomalla 2018: within the photic
         # layer (0 to max_photic_depth), restricted to night > day (fl_diff > 0,
         # the quenching signal), the difference D(z) is anchored at its near-surface
         # max (top 5 m); QD is the deeper point of steepest gradient down to one of
@@ -1154,7 +1154,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         "biermann2015": "Biermann 2015",
         "xing2018": "Xing 2018",
         "hemsley2015": "Hemsley 2015",
-        "thomalla2017": "Thomalla 2017",
+        "thomalla2018": "Thomalla 2018",
         "swart2015": "Swart 2015",
         "sackmann2008": "Sackmann 2008",
     }
@@ -1177,7 +1177,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             "One global night CHLA–bbp regression is fit for the deployment.\n"
             "Daytime CHLA over the euphotic zone is set to slope × bbp + intercept."
         ),
-        "thomalla2017": (
+        "thomalla2018": (
             "Each day profile uses its preceding night's CHLA:bbp ratio.\n"
             "Above QD, CHLA is set to (night CHLA:bbp) × day bbp where it raises it."
         ),
@@ -1280,8 +1280,8 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
                 {self.bbp_var, "ZEU"},
             )
         if getattr(self, "_thomalla_day_night", None):
-            implemented["thomalla2017"] = (
-                self.apply_thomalla2017_quenching_correction,
+            implemented["thomalla2018"] = (
+                self.apply_thomalla2018_quenching_correction,
                 {self.bbp_var},
             )
         have = set(self.data_copy.data_vars)
@@ -1349,7 +1349,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
             )
 
     def _day_night_pairs(self):
-        # (midday, midnight) profile pairs nearest in time, Thomalla 2017 Fig. 4
+        # (midday, midnight) profile pairs nearest in time, Thomalla 2018 Fig. 4
         # style: only profiles within MIDDAY_MIDNIGHT_WINDOW_HOURS of solar
         # noon/midnight (the worst-case quenching extremes), capped at
         # MAX_COMPARE_PROFILES for speed.

@@ -1297,11 +1297,19 @@ def qc_hist(
     hislim=range(10),
     bins=None,
     ext=".png",
+    source_all_nan: bool = None,
+    flag_all_nan: bool = None,
 ) -> str:
     #   QC histogram figure: left axis plots the QC variable's parent series,
     #   right axis bins each flag type labelled with its point count. hislim is
     #   the schema's flags (default Argo 0-9); returns the saved figure path.
+    #   source_all_nan/flag_all_nan let a caller that already scanned the arrays
+    #   (e.g. make_plots) pass the result in rather than scanning again here.
     var_source = var[:-3]  #   TEMP_QC --> TEMP
+    if source_all_nan is None:
+        source_all_nan = bool(np.all(np.isnan(data[var_source])))
+    if flag_all_nan is None:
+        flag_all_nan = bool(np.all(np.isnan(data[var])))
 
     #   Short and wide so three plots fit on a page (see make_plots).
     fig, axs = plt.subplots(ncols=2, figsize=(8, 3.2), layout="constrained")
@@ -1315,7 +1323,7 @@ def qc_hist(
 
     #   Plot the source variable using xarray.plot for speed.
     #   If all NaN, clarify that on the plot.
-    if np.all(np.isnan(data[var_source])):
+    if source_all_nan:
         axs[0].text(
             0.2, 0.5, f"Data ({var_source}) are NaN", transform=axs[0].transAxes
         )
@@ -1331,7 +1339,7 @@ def qc_hist(
         axs[0].set_ylabel(var_source)
     axs[0].set_title("")
 
-    if np.all(np.isnan(data[var])):
+    if flag_all_nan:
         axs[1].text(0.2, 0.5, f"Flags ({var}) are NaN", transform=axs[1].transAxes)
     else:
         data[var].plot.hist(
@@ -1394,14 +1402,21 @@ def make_plots(
     emitted = 0
     for i, var in enumerate(qc_vars, start=1):
         var_source = var[:-3]  #   TEMP_QC --> TEMP
+        #   Scan each array's NaN-ness once and reuse it in qc_hist, rather than
+        #   scanning both again inside there.
+        source_all_nan = bool(np.all(np.isnan(data[var_source])))
+        flag_all_nan = bool(np.all(np.isnan(data[var])))
         #   When both the measurement and its flags are entirely NaN there is
         #   nothing to plot. Note it in one line and skip so more useful plots
         #   fit on the page.
-        if np.all(np.isnan(data[var_source])) and np.all(np.isnan(data[var])):
+        if source_all_nan and flag_all_nan:
             pdf.body(f"{var_source} and {var} are all NaN.", align="C")
         else:
             # Any form of scatter takes ~30 sec, stick with xarray.plot for now (no colorbars, alternative color schemes)
-            hist_img = qc_hist(data, outdir, var, dataset_label=dataset_label)
+            hist_img = qc_hist(
+                data, outdir, var, dataset_label=dataset_label,
+                source_all_nan=source_all_nan, flag_all_nan=flag_all_nan,
+            )
             pdf.image_full(hist_img, aspect=3.2 / 8)
         if bar is not None:
             target = round(80 * i / len(qc_vars))
