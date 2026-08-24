@@ -450,10 +450,7 @@ class Pipeline(ConfigMirrorMixin):
                         # error; this just marks the step as skipped and moves
                         # on, keeping the prior step's context.
                         self.logger.log(
-                            SEVERE,
-                            "Step '%s' failed and was skipped "
-                            "(continue_on_step_fail is enabled).",
-                            step["name"],
+                            SEVERE, "Step '%s' failed and was skipped.", step["name"]
                         )
         finally:
             if report_present:

@@ -64,7 +64,7 @@ class ColorFormatter(logging.Formatter):
 
     _RESET = "\033[0m"
     _RED = "\033[31m"
-    _AMBER = "\033[38;5;208m"
+    _AMBER = "\033[38;5;202m"
     _YELLOW = "\033[33m"
     _GREY = "\033[90m"
 
