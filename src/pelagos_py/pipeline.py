@@ -436,7 +436,7 @@ class Pipeline(ConfigMirrorMixin):
             else contextlib.nullcontext()
         )
         continue_on_step_fail = self.global_parameters.get(
-            "continue_on_step_fail", False
+            "continue_on_step_fail", True
         )
         try:
             with backend_ctx:
