@@ -116,6 +116,17 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
     # checked at run time against the selected method rather than required here.
     required_variables = ["PROFILE_NUMBER", "TIME", "DEPTH", "LATITUDE", "LONGITUDE"]
     provided_variables = []
+    # MLD/ZEU/Z_IPAR and every backscatter fallback are read whenever present:
+    # the diagnostics method-comparison panel (_draw_method_comparison) re-runs
+    # every method, not just the configured one, so all of their inputs must
+    # stay available even when diagnostics is force-enabled after __init__ (see
+    # report capture). Likewise the four CHLA-family names cover check_chl_
+    # variables()'s "_ADJUSTED variant already exists" branch.
+    optional_variables = ["MLD", "ZEU", "Z_IPAR"] + BBP_VAR_FALLBACKS + [
+        "CHLA", "CHLA_ADJUSTED", "CHLA_FLUORESCENCE", "CHLA_FLUORESCENCE_ADJUSTED",
+    ]
+    variable_parameters = ["bbp_var", "par_var", "apply_to"]
+    uses_data_subset = True
 
     # methods whose correction needs the solar-elevation angle (so the per-profile
     # sun inputs are only computed when one of them is selected)
@@ -435,7 +446,7 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     # ==================================================================

@@ -414,6 +414,8 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
     step_name = "Find Profiles"
     required_variables = ["TIME"]
     provided_variables = ["PROFILE_NUMBER", "PROFILE_DIRECTION", "PROFILE_GRADIENT", "CYCLE", "SCI_PHASE"]
+    variable_parameters = ["depth_column"]
+    uses_data_subset = True
 
     parameter_schema = {
         "depth_column": {
@@ -542,7 +544,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
             "SCI_PHASE_QC": ["TIME_QC", f"{depth_col}_QC"]
         })
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def generate_diagnostics(self, mapped_df, depth_col):

@@ -134,6 +134,10 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
     # the pipeline pre-run check (which only knows standard/step-produced vars).
     required_variables = ["PROFILE_NUMBER", "TIME", "DEPTH"]
     provided_variables = ["ZEU", "Z_IPAR"]
+    # par_var/depth_variable are config-driven variable names (see run()'s halt
+    # check, which validates the *actual* configured names, not this static list).
+    variable_parameters = ["par_var", "depth_variable"]
+    uses_data_subset = True
 
     parameter_schema = {
         "par_var": {
@@ -239,7 +243,7 @@ class InterpolatePAR(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def _emit_scalar(

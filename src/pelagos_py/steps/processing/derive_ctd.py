@@ -78,6 +78,7 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         "CONS_TEMP",
         "DENSITY",
     ]
+    uses_data_subset = True
 
     parameter_schema = {
         "to_derive": {
@@ -220,7 +221,7 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         self.update_qc()
 
         # Update the context with the enhanced dataset
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def plot_diagnostics(self):

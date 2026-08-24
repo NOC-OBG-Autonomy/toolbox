@@ -134,7 +134,7 @@ class ApplyQC(BaseStep):
 
         # Check if the data is in the context
         self.check_data()
-        data = self.context["data"].copy(deep=True)
+        full_data = self.context["data"]
 
         # Try and fetch the qc history from context and update it
         qc_history = self.context.setdefault("qc_history", {})
@@ -153,15 +153,24 @@ class ApplyQC(BaseStep):
                 all_required_variables.update(test.required_variables)
                 test_qc_outputs_cols.update(test.qc_outputs)
             #   Check that the required variables for the test are in the dataset.
-            #   Use data.variables (data vars + coordinates), not data.keys() (data
+            #   Use full_data.variables (data vars + coordinates), not .keys() (data
             #   vars only), so a required variable stored as a coordinate (e.g. TIME,
             #   LATITUDE, LONGITUDE) is not falsely reported as missing.
-            present = set(data.variables)
+            present = set(full_data.variables)
             if not set(all_required_variables).issubset(present):
                 self.halt(
                     f"The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
                     f" Make sure that the variables are present in the data, or remove tests from the order."
                 )
+
+        # Deep-copy only what this call touches: every test's required_variables
+        # (each test self-scopes to these, including dynamic tests above), plus
+        # the QC output columns themselves and the variable each flags (needed to
+        # build masks for outputs that don't exist yet, see mia_qc/base below).
+        subset_names = set(all_required_variables) | set(test_qc_outputs_cols)
+        subset_names.update(var[:-3] for var in test_qc_outputs_cols)
+        subset_vars = [name for name in subset_names if name in full_data.variables]
+        data = full_data[subset_vars].copy(deep=True)
         # Convert data to polars for fast processing
         # Fetch existing flags from the data and create a place to store them
         existing_flags = [
@@ -290,7 +299,10 @@ class ApplyQC(BaseStep):
                 self.flag_store[flag_column].to_numpy(),
             )
             data[flag_column].attrs = self.flag_store[flag_column].attrs.copy()
-        self.context["data"] = data
+        # data is a subset of context["data"]; merge rather than replace so
+        # variables outside the subset (e.g. other tests' untouched _QC columns)
+        # aren't dropped.
+        self.context["data"].update(data)
         self.context["qc_history"] = qc_history
 
         return self.context

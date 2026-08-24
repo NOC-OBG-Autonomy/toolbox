@@ -37,6 +37,11 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
     step_name = "BBP from Beta"
     required_variables = ["TIME", "DEPTH", "TEMP", "PRAC_SALINITY"]
     provided_variables = []
+    # PROFILE_NUMBER is read in run() (data_subset) but not declared required above
+    # (pre-existing; left as-is to avoid changing pipeline-validation behaviour).
+    optional_variables = ["PROFILE_NUMBER"]
+    variable_parameters = ["apply_to", "output_as"]
+    uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
@@ -119,7 +124,7 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def generate_diagnostics(self):
@@ -150,6 +155,8 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
     step_name = "Isolate BBP Spikes"
     required_variables = ["TIME"]
     provided_variables = []
+    variable_parameters = ["apply_to"]
+    uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
@@ -216,7 +223,7 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def generate_diagnostics(self):

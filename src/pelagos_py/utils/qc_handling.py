@@ -45,7 +45,45 @@ class QCHandlingMixin:
 
         # Logs + STOPs the pipeline if data is absent (see BaseStep.check_data).
         self.check_data()
-        self.data = self.context["data"].copy(deep=True)
+        full_data = self.context["data"]
+
+        if getattr(self, "uses_data_subset", False):
+            # Opt-in: deep-copying the whole dataset is wasteful when a step only
+            # reads required_variables/provided_variables/optional_variables (the
+            # last for anything read conditionally, e.g. diagnostics-only vars),
+            # their _QC companions, and whatever the config's flag_filter_settings
+            # names. Steps write back via ``self.context["data"].update(self.data)``
+            # so nothing outside the subset is ever dropped. Not yet the default:
+            # steps declaring param-driven variable names (e.g. ``self.apply_to``)
+            # need auditing before they can safely opt in.
+            subset_names = set(getattr(self, "required_variables", []))
+            subset_names.update(getattr(self, "provided_variables", []))
+            subset_names.update(getattr(self, "optional_variables", []))
+            # variable_parameters: names of *parameters* (already resolved onto
+            # self, see BaseStep.__init__) whose value is itself a variable name
+            # (or list of them), e.g. par_var="DOWNWELLING_PAR". Config-driven, so
+            # can't be listed statically like optional_variables.
+            for attr in getattr(self, "variable_parameters", []):
+                value = getattr(self, attr, None)
+                if value is None:
+                    continue
+                values = [value] if isinstance(value, str) else value
+                subset_names.update(values)
+                # Several steps use the OG1 "prefer an existing _ADJUSTED variant"
+                # convention (e.g. apply_to="CHLA" but CHLA_ADJUSTED is read/used if
+                # present). Harmless to include speculatively: filtered out below if
+                # it doesn't exist in the full dataset.
+                subset_names.update(f"{v}_ADJUSTED" for v in values)
+            subset_names.update(f"{var}_QC" for var in list(subset_names))
+            subset_names.update(
+                name
+                for var in self.filter_settings
+                for name in (var, f"{var}_QC")
+            )
+            subset_vars = [name for name in subset_names if name in full_data.variables]
+            self.data = full_data[subset_vars].copy(deep=True)
+        else:
+            self.data = full_data.copy(deep=True)
 
         # "Before" snapshot for reconstruct_data/update_qc, which only read back
         # the filter_settings variables (and their _QC). Steps needing a broader

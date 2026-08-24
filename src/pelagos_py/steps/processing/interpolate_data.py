@@ -78,6 +78,7 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
     step_name = "Interpolate Data"
     required_variables = ["TIME"]
     provided_variables = []
+    uses_data_subset = True
 
     # Variables to interpolate are driven entirely by the framework
     # ``qc_handling_settings`` (flag_filter_settings).
@@ -153,7 +154,7 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
             self.generate_diagnostics()
 
         # Update the context with the enhanced dataset
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def _max_interp_seconds(self):

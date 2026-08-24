@@ -201,6 +201,10 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
     step_name = "Salinity Adjustment"
     required_variables = ["TIME", "PROFILE_NUMBER", "CNDC", "TEMP", "PRES"]
     provided_variables = []
+    # Read only if present: TIME_CTD is an optional fallback for TIME (see run());
+    # PROFILE_DIRECTION/DEPTH are only used to build the diagnostics QC mask.
+    optional_variables = ["TIME_CTD", "PROFILE_DIRECTION", "DEPTH"]
+    uses_data_subset = True
 
     parameter_schema = {
         "filter_window_size": {
@@ -244,7 +248,9 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        # self.data is a subset of context["data"] (see QCHandlingMixin); merge
+        # rather than replace so variables outside the subset aren't dropped.
+        self.context["data"].update(self.data)
         return self.context
 
     def correct_ct_lag(self):
@@ -385,6 +391,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         back onto the original sampling. Operates in place on ``self.data``.
         """
         corrected_temp_array = np.full(len(self.data["TEMP"]), np.nan)
+        prof_arr = self.data["PROFILE_NUMBER"].values
         profile_numbers = np.unique(
             self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS").values
         )
@@ -394,12 +401,18 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
         for prof in self.log_progress(profile_numbers, desc="Thermal Lag", unit="prof"):
 
-            mask = self.data["PROFILE_NUMBER"] == prof
-            nan_mask = self.data["TEMP"].isnull() | ~mask
-            data_subset = self.data[[self.time_col, "TEMP", "PRES"]].where(
-                ~nan_mask, drop=True
+            # Restrict to this profile's rows first (like correct_ct_lag above),
+            # so the NaN-mask/where below runs on a per-profile slice instead of
+            # rebuilding a full-dataset-sized copy on every iteration.
+            prof_indices = np.where(prof_arr == prof)[0]
+            if len(prof_indices) == 0:
+                continue
+            profile = self.data[[self.time_col, "TEMP", "PRES"]].isel(
+                N_MEASUREMENTS=prof_indices
             )
-            indices = np.where(~nan_mask)[0]
+            nan_mask = profile["TEMP"].isnull()
+            data_subset = profile.where(~nan_mask, drop=True)
+            indices = prof_indices[~nan_mask.values]
 
             if len(data_subset[self.time_col]) < 5:
                 continue

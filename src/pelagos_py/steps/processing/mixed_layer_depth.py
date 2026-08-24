@@ -87,6 +87,13 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
     step_name = "Mixed Layer Depth"
     required_variables = ["PROFILE_NUMBER", "DEPTH"]
     provided_variables = ["MLD", "MLD_BOOL"]
+    # ABS_SALINITY/CONS_TEMP/TEMP cover both "auto" method resolution and the
+    # diagnostics panel, which computes MLD from every available method, not
+    # just the configured one; TIME/PROFILE_DIRECTION are read only if present.
+    optional_variables = [
+        "ABS_SALINITY", "CONS_TEMP", "TEMP", "TIME", "PROFILE_DIRECTION",
+    ]
+    uses_data_subset = True
 
     parameter_schema = {
         "method": {
@@ -158,7 +165,7 @@ class MixedLayerDepthStep(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def _resolve_method(self):

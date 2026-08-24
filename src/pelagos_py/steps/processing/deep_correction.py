@@ -81,6 +81,8 @@ class deep_correction(BaseStep, QCHandlingMixin):
     step_name = "Deep Correction"
     required_variables = ["PROFILE_NUMBER"]
     provided_variables = []
+    variable_parameters = ["apply_to", "depth_var"]
+    uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
@@ -153,7 +155,7 @@ class deep_correction(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def resolve_variables(self):
