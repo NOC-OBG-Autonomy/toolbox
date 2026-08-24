@@ -20,6 +20,7 @@ import yaml
 import pandas as pd
 import numpy as np
 import xarray as xr
+import gc
 import os
 import time
 import logging
@@ -371,6 +372,11 @@ class Pipeline(ConfigMirrorMixin):
                 self._captured_figures.append(
                     {"step": step.name, "images": captured_images}
                 )
+
+            # Steps can leave behind large transient arrays (matplotlib figures,
+            # intermediate xarray/pandas objects) that Python's own allocator
+            # would otherwise sit on for a while, inflating RSS between steps.
+            gc.collect()
 
             return result
 
