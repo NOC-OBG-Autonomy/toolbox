@@ -32,7 +32,7 @@ import tempfile
 
 from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
-from pelagos_py.utils.log_levels import STOP
+from pelagos_py.utils.log_levels import STOP, SEVERE
 from pelagos_py.utils.console import make_console_handler, progress_bar
 from pelagos_py.utils import diagnostic_capture
 
@@ -435,10 +435,26 @@ class Pipeline(ConfigMirrorMixin):
             if report_present
             else contextlib.nullcontext()
         )
+        continue_on_step_fail = self.global_parameters.get(
+            "continue_on_step_fail", False
+        )
         try:
             with backend_ctx:
                 for step in self.steps:
-                    self._context = self.execute_step(step, self._context)
+                    try:
+                        self._context = self.execute_step(step, self._context)
+                    except (RuntimeError, SystemExit):
+                        if not continue_on_step_fail:
+                            raise
+                        # execute_step/halt() already logged the underlying
+                        # error; this just marks the step as skipped and moves
+                        # on, keeping the prior step's context.
+                        self.logger.log(
+                            SEVERE,
+                            "Step '%s' failed and was skipped "
+                            "(continue_on_step_fail is enabled).",
+                            step["name"],
+                        )
         finally:
             if report_present:
                 #   Figures have been embedded by the report writer by now.
