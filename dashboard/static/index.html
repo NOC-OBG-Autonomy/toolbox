@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>pelagos-py</title>
+  <link rel="icon" type="image/svg+xml" href="/img/NOC_logo.svg" />
+  <!-- Third-party libs. CDN for now; vendor these into static/vendor/ for a
+       fully-offline local app later (see README). -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css" />
+  <!-- YAML editor theme (VS Code Dark+ look) is defined locally in style.css. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/yaml/yaml.min.js"></script>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <!-- Left rail: brand + step palette (auto-generated from the registry) -->
+    <aside class="palette">
+      <div class="brand">
+        <img class="logo" src="/img/NOC_logo.svg" alt="NOC logo" height="32" />
+        <div class="title">pelagos-py</div>
+      </div>
+      <input id="palette-search" placeholder="Search steps…" />
+      <div id="palette-list"></div>
+      <a class="rail-foot" href="https://noc-obg-autonomy.github.io/pelagos-py/"
+         target="_blank" rel="noopener noreferrer">
+        <span class="rf-ico" data-icon="book" data-icon-size="18"></span>
+        <span class="rf-text">
+          <span class="rf-title">Documentation</span>
+          <span class="rf-sub">Guides &amp; step reference</span>
+        </span>
+        <span class="rf-out" data-icon="external" data-icon-size="14"></span>
+      </a>
+    </aside>
+
+    <div class="main-col">
+      <div class="tabs">
+        <div class="tab-list">
+          <button class="tab" data-tab="yaml"><span data-icon="code" data-icon-size="15"></span>YAML</button>
+          <button class="tab active" data-tab="run"><span data-icon="play" data-icon-size="15"></span>Run</button>
+          <button class="tab" data-tab="plots"><span data-icon="image" data-icon-size="15"></span>Plots</button>
+          <button class="tab" data-tab="report"><span data-icon="file" data-icon-size="15"></span>Report</button>
+          <button class="tab" data-tab="inspect"><span data-icon="search" data-icon-size="15"></span>Inspect</button>
+        </div>
+        <div class="tab-actions hidden" data-panel="yaml">
+          <select id="theme-select" title="Editor colour theme">
+            <option value="vscode-dark">Dark Modern</option>
+            <option value="vscode-darkplus">Dark+</option>
+            <option value="one-dark">One Dark Pro</option>
+            <option value="dracula">Dracula</option>
+            <option value="vscode-light">Light Modern</option>
+          </select>
+          <button id="btn-copy" class="ghost"><span data-icon="copy"></span>Copy</button>
+        </div>
+        <div class="tab-actions" data-panel="run">
+          <span id="run-status" class="run-status"></span>
+          <button id="btn-stop" class="ghost danger" disabled><span data-icon="stop"></span>Stop</button>
+          <button id="btn-run" class="primary"><span data-icon="play"></span>Run pipeline</button>
+        </div>
+      </div>
+
+      <main class="layout">
+        <!-- Centre: pipeline builder -->
+        <section class="builder">
+          <div class="builder-head">
+            <div class="topbar-top">
+              <h1 class="page-title">Pipeline</h1>
+              <div class="cfg-picker-group">
+                <span class="cfg-label">Pipeline</span>
+                <!-- Custom dropdown (not a <select>) so reference configs can be
+                     colour-coded rather than labelled "(locked)". -->
+                <div id="config-select" class="cfg-select" title="Switch to a different saved pipeline">
+                  <button type="button" class="cfg-trigger" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="cfg-current">Choose a pipeline…</span>
+                    <span class="cfg-caret" data-icon="down" data-icon-size="14"></span>
+                  </button>
+                  <ul class="cfg-menu hidden" role="listbox"></ul>
+                </div>
+              </div>
+              <div id="config-note" class="config-note hidden"></div>
+            </div>
+            <div class="topbar-bottom">
+              <div class="cfg-file-group" title="Saves the pipeline under this name — a new name creates a new pipeline, the current name overwrites it">
+                <span class="cfg-label">Save as</span>
+                <input id="config-name" placeholder="config name" />
+                <button id="btn-save" class="ghost"><span data-icon="save"></span><span class="btn-label">Save</span></button>
+                <button id="btn-delete" class="ghost danger"><span data-icon="trash"></span>Delete</button>
+              </div>
+              <button id="btn-reveal" class="ghost" title="Open the configs folder in Finder — saved pipelines live there as .yaml files">
+                <span data-icon="folder"></span>Open folder</button>
+            </div>
+          </div>
+          <div class="builder-bar">
+            <div id="validation-status" class="validation-status"></div>
+            <div class="panel-actions">
+              <button id="btn-add-section" class="ghost"><span data-icon="plus"></span>Section</button>
+              <button id="btn-clear" class="ghost"><span data-icon="trash2"></span>Clear</button>
+            </div>
+          </div>
+          <div id="validation" class="validation"></div>
+          <div id="pipeline-settings"></div>
+          <div id="pipeline-steps"></div>
+          <div class="empty-hint" id="empty-hint">
+            Click a step on the left to add it to the pipeline.
+          </div>
+        </section>
+
+        <!-- Right: YAML + validation + run -->
+        <section class="output">
+          <!-- Interactive pause: the one "paused after step N" indicator, shown
+               on every tab for as long as the run is paused, so it reads the
+               same whichever view is showing. "Log"/"Review step" swap the Run
+               tab between the log and the step-review panel — each hides once
+               its own view is already on screen. Continuing is done from the
+               top-left Run pipeline button, which becomes Continue while
+               paused. -->
+          <div id="run-pause" class="run-pause hidden">
+            <span class="pause-ico" data-icon="pause" data-icon-size="18"></span>
+            <div class="run-pause-title">
+              <strong id="run-pause-name"></strong>
+              <span id="run-pause-sub" class="run-pause-sub"></span>
+            </div>
+            <span id="run-pause-status" class="run-pause-status"></span>
+            <div class="run-pause-actions">
+              <button id="btn-log" class="ghost">Log</button>
+              <button id="btn-rerun" class="ghost"><span data-icon="rerun"></span>Re-run step</button>
+              <button id="btn-review" class="ghost"><span data-icon="image"></span>Review step</button>
+            </div>
+          </div>
+
+          <div class="tab-panel hidden" data-panel="yaml">
+            <textarea id="yaml-editor"></textarea>
+          </div>
+
+          <div class="tab-panel" data-panel="run">
+            <!-- Live RAM meter: RSS per step, so transient per-step spikes (and
+                 their release) are visible. Hidden until the first
+                 __PELAGOS_MEM__ marker arrives. Run-tab only. -->
+            <div id="mem-meter" class="mem-meter hidden">
+              <div class="mem-head">
+                <span class="mem-stat">RAM <b id="mem-cur">–</b></span>
+                <span class="mem-stat mem-peak">peak <b id="mem-peak">–</b></span>
+                <span class="mem-stat mem-data">data <b id="mem-data">–</b></span>
+              </div>
+              <svg id="mem-spark" class="mem-spark" preserveAspectRatio="none"></svg>
+            </div>
+            <div id="mem-tooltip" class="mem-tooltip hidden"></div>
+
+            <!-- Takes the console's place while the run is paused at a
+                 diagnostics step: that step's plots + just its parameters. -->
+            <div id="step-review" class="step-review hidden"></div>
+            <div id="log-wrap" class="log-wrap">
+              <button id="log-to-bottom" class="log-to-bottom hidden"
+                      title="Jump to latest" aria-label="Jump to latest">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"
+                     aria-hidden="true"><path d="M10 3h4v9h4l-6 7-6-7h4z"/></svg>
+              </button>
+              <pre id="log-console" class="log-console"></pre>
+            </div>
+            <p class="note" id="run-note">Steps with <code>diagnostics: true</code> pause
+              the run here so you can check the plot and tune that step before
+              continuing. Every plot is also kept in the <strong>Plots</strong> tab.</p>
+          </div>
+
+          <div class="tab-panel hidden" data-panel="plots">
+            <div id="plots-gallery" class="plots-gallery"></div>
+            <p class="empty-hint" id="plots-empty">
+              Plots from steps with <code>diagnostics: true</code> show up here while
+              the pipeline runs. Click one to view it full size.
+            </p>
+          </div>
+
+          <div class="tab-panel hidden" data-panel="report">
+            <div id="report-view" class="report-view hidden"></div>
+            <p class="empty-hint" id="report-empty">
+              If the pipeline writes a PDF report (a <strong>Write Data Report</strong>
+              step), it appears here when the run reaches it — ready to open.
+            </p>
+          </div>
+
+          <div class="tab-panel hidden" data-panel="inspect">
+            <div class="inspect-search-wrap">
+              <span class="inspect-search-icon" data-icon="search" data-icon-size="14"></span>
+              <input id="inspect-search" class="inspect-search" type="text"
+                     placeholder="Search parameters, sensors, attributes…" autocomplete="off" spellcheck="false" />
+            </div>
+            <div id="inspect-path" class="inspect-path"></div>
+            <div id="inspect-body" class="inspect-body hidden">
+              <section class="inspect-section" data-section="parameters">
+                <h3 class="inspect-section-title">Parameters <span class="inspect-count" id="inspect-count-parameters"></span></h3>
+                <div class="inspect-rows" id="inspect-rows-parameters"></div>
+              </section>
+              <section class="inspect-section" data-section="sensors">
+                <h3 class="inspect-section-title">Sensors <span class="inspect-count" id="inspect-count-sensors"></span></h3>
+                <div class="inspect-rows" id="inspect-rows-sensors"></div>
+              </section>
+              <section class="inspect-section" data-section="attributes">
+                <h3 class="inspect-section-title">Attributes <span class="inspect-count" id="inspect-count-attributes"></span></h3>
+                <div class="inspect-rows" id="inspect-rows-attributes"></div>
+              </section>
+            </div>
+            <p class="empty-hint" id="inspect-empty">
+              Add a file to '<strong>Load OG1</strong>'.
+            </p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="/js/icons.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/forms.js"></script>
+  <script src="/js/builder.js"></script>
+  <script src="/js/config.js"></script>
+  <!-- plot.js lazy-loads /vendor/plotly.min.js the first time an interactive
+       plot is opened, so the 4.5 MB bundle costs nothing on page load. -->
+  <script src="/js/plot.js"></script>
+  <script src="/js/viewer.js"></script>
+  <script src="/js/review.js"></script>
+  <script src="/js/inspect.js"></script>
+  <script src="/js/mem.js"></script>
+  <script src="/js/run.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

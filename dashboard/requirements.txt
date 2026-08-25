@@ -1,0 +1,6 @@
+# Dashboard-only dependencies. pelagos_py itself (and its processing deps) are
+# installed separately -- the dashboard imports it to introspect steps.
+fastapi>=0.110
+uvicorn>=0.29
+pyyaml>=6.0
+psutil>=5.9  # live RAM meter during a run (run_bootstrap._emit_mem)
