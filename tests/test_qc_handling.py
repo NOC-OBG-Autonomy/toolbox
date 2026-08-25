@@ -31,7 +31,7 @@ def make_step(flags=None, calculation_flag_filter=None):
         if calculation_flag_filter is None
         else list(calculation_flag_filter)
     )
-    step.log = lambda message: None
+    step.log = lambda message, console=True: None
     return step
 
 

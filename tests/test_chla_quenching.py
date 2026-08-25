@@ -220,7 +220,9 @@ def test_quenching_depth_picks_steepest_gradient_point():
     z = np.array([2, 6, 10, 15, 20, 30.0])
     fl_day = np.array([0.4, 0.5, 0.7, 0.9, 1.0, 0.75])
     fl_night = np.array([1.0, 1.0, 1.0, 1.0, 1.0, 0.75])  # D returns to 0 by depth
-    assert Quenching._quenching_depth(z, fl_day, fl_night, max_photic_depth=38.0) == 15.0
+    qd, reason = Quenching._quenching_depth(z, fl_day, fl_night, max_photic_depth=38.0)
+    assert qd == 15.0
+    assert reason == "ok"
 
 
 def test_thomalla_corrects_above_quenching_depth_and_only_raises():
