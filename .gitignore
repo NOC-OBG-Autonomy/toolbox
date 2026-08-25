@@ -112,3 +112,14 @@ cython_debug/
 *.pot
 src/pelagos_py/_version.py
 .vscode/
+
+# Dashboard: diagnostic figures captured from a run, served to the Plots tab.
+dashboard/_run_figures/
+
+# Dashboard: last-run snapshot and user-saved configs. Only default.yaml and
+# the demo_*.yaml reference configs (see PROTECTED_CONFIGS in app.py) are
+# tracked; everything else in configs/ is generated or user-local.
+dashboard/configs/_last_run.yaml
+dashboard/configs/*.yaml
+!dashboard/configs/default.yaml
+!dashboard/configs/demo_*.yaml

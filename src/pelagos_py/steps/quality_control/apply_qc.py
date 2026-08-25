@@ -144,8 +144,15 @@ class ApplyQC(BaseStep):
         test_qc_outputs_cols = set({})
         for test in queued_qc:
             if hasattr(test, "dynamic"):
-                # Initialise the test to check its dynamic attributes
-                test_instance = test(None, **self.qc_settings[test.qc_name])
+                # Initialise the test to check its dynamic attributes. Strip the
+                # reserved per-test ``diagnostics`` key so it never reaches the
+                # test's parameter validation.
+                test_params = {
+                    k: v
+                    for k, v in self.qc_settings[test.qc_name].items()
+                    if k != "diagnostics"
+                }
+                test_instance = test(None, **test_params)
                 all_required_variables.update(test_instance.required_variables)
                 test_qc_outputs_cols.update(test_instance.qc_outputs)
                 del test_instance
@@ -210,8 +217,14 @@ class ApplyQC(BaseStep):
         self.flag_store.update(masks)
 
         # Run through all of the QC steps and add the flags to flag_store
-        for qc_qc_name, qc_test_params in self.qc_settings.items():
-            # Create an instance of this test step
+        for qc_qc_name, qc_test_settings in self.qc_settings.items():
+            # Create an instance of this test step. ``diagnostics`` is a reserved
+            # per-test override, not a QC parameter: pop it out (falling back to
+            # the step-level flag) before it reaches the test's validation.
+            qc_test_params = {
+                k: v for k, v in qc_test_settings.items() if k != "diagnostics"
+            }
+            test_diagnostics = qc_test_settings.get("diagnostics", self.diagnostics)
             self.log(
                 f"Applying: {qc_qc_name}"
             )  # print(f"[Apply QC] Applying: {qc_qc_name}")
@@ -270,8 +283,9 @@ class ApplyQC(BaseStep):
 
             # Diagnostic plotting. Never let a diagnostic-only error abort QC;
             # this matters when the report writer force-enables diagnostics to
-            # capture plots for every test.
-            if self.diagnostics:
+            # capture plots for every test. ``test_diagnostics`` is the per-test
+            # override (falling back to the step-level flag).
+            if test_diagnostics:
                 try:
                     qc_test_instance.plot_diagnostics()
                 except Exception as exc:  # noqa: BLE001 - diagnostics must not be fatal

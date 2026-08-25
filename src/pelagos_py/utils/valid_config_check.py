@@ -61,7 +61,9 @@ def _qc_test_io(qc_class, qc_params):
     to introspect), while static tests expose them as class attributes.
     """
     if getattr(qc_class, "dynamic", False):
-        probe = qc_class(None, **(qc_params or {}))
+        # `diagnostics` is a reserved per-test flag, not a QC parameter.
+        params = {k: v for k, v in (qc_params or {}).items() if k != "diagnostics"}
+        probe = qc_class(None, **params)
         return list(probe.required_variables), list(probe.qc_outputs)
     return (
         list(getattr(qc_class, "required_variables", [])),
@@ -188,6 +190,11 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
         # also_flag propagation are resolved.)
         if step_name == "Apply QC":
             for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
+                # `diagnostics` is a reserved per-test flag handled by Apply QC,
+                # not a QC test parameter — exclude it before validating.
+                qc_params = {
+                    k: v for k, v in (qc_params or {}).items() if k != "diagnostics"
+                }
                 qc_class = QC_CLASSES.get(qc_name)
                 if qc_class is None:
                     continue  # Apply QC raises a clear error for unknown tests at run time

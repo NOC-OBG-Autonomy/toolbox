@@ -31,3 +31,6 @@ pyyaml
 compliance-checker
 cc-plugin-ncei
 cc-plugin-og
+fastapi>=0.110
+uvicorn>=0.29
+psutil>=5.9
