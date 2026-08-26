@@ -183,7 +183,9 @@ const Config = {
   known: [],        // every config name on the server
   locked: [],       // the protected subset
   demo: [],         // the demo subset (also locked) — shown as their own group
-  reference: [],    // non-demo protected configs (default.yaml)
+  missions: {},     // demo config names grouped by deployment mission, in display order
+  labels: {},       // display label per demo config name (glider names repeat across missions)
+  reference: [],    // non-demo protected configs (default.yaml, demo_alr.yaml)
   downloaded: [],   // demo configs whose NetCDF file is already on disk
   current: null,    // name of the loaded config, or null for an unsaved one
   selected: '',     // name shown in the picker ('' once the config is unsaved)
@@ -310,9 +312,11 @@ const Config = {
     }
   },
 
-  // "demo_nelson.yaml" -> "Nelson"
+  // "demo_nelson.yaml" -> "Nelson", from the server-supplied label where
+  // available (glider names repeat across missions, e.g. two Churchills, so
+  // the key alone can't always be title-cased back into the right label).
   demoLabel(name) {
-    return name.replace(/^demo_/, '').replace(/\.ya?ml$/, '')
+    return Config.labels[name] || name.replace(/^demo_/, '').replace(/\.ya?ml$/, '')
       .replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   },
 
@@ -382,15 +386,19 @@ const Config = {
       menu.appendChild(h);
     };
 
-    const demoNames = Config.known.filter((n) => Config.demo.includes(n));
     const referenceNames = Config.known.filter((n) => Config.reference.includes(n));
     const otherNames = Config.known.filter(
       (n) => !Config.demo.includes(n) && !Config.reference.includes(n)
     );
 
-    if (demoNames.length) {
-      group('Demo configs');
-      for (const name of demoNames) menu.appendChild(makeOpt(name, { demo: true }));
+    // Demo configs are grouped by deployment mission (Config.missions), not
+    // lumped into one list — the same glider name can appear in more than one
+    // mission (e.g. Churchill, Zephyr), so which group it's under matters.
+    for (const [mission, names] of Object.entries(Config.missions)) {
+      const inThisMission = names.filter((n) => Config.known.includes(n));
+      if (!inThisMission.length) continue;
+      group(mission);
+      for (const name of inThisMission) menu.appendChild(makeOpt(name, { demo: true }));
     }
     if (referenceNames.length) {
       group('Default');
@@ -454,6 +462,8 @@ const Config = {
     Config.known = info.configs || [];
     Config.locked = info.protected || [];
     Config.demo = info.demo || [];
+    Config.missions = info.missions || {};
+    Config.labels = info.labels || {};
     Config.reference = info.reference || [];
     Config.downloaded = info.downloaded || [];
     if (selected !== undefined) Config.selected = selected || '';

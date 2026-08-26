@@ -13,7 +13,7 @@ const API = {
     });
     return r.json();
   },
-  // -> {configs, protected, demo, reference, downloaded: [name]}
+  // -> {configs, protected, demo, missions, labels, reference, downloaded: [name]}
   async listConfigs() {
     const r = await fetch('/api/configs');
     return r.json();

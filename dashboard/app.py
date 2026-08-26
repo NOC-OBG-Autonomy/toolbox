@@ -92,7 +92,7 @@ if str(SRC_DIR) not in sys.path:
 # "what steps exist" -- the dashboard derives everything from it.
 from pelagos_py.steps import STEP_CLASSES, QC_CLASSES  # noqa: E402
 from pelagos_py.utils import parameter_spec  # noqa: E402
-from pelagos_py.utils.demo_data import DEMOS as DEMO_FILES, DEMO_DATA_DIR  # noqa: E402
+from pelagos_py.utils.demo_data import DEMOS as DEMO_FILES, DEMO_DATA_DIR, MISSIONS  # noqa: E402
 
 
 # Pipeline-level keys (the top ``pipeline:`` block) are not part of any step
@@ -269,17 +269,19 @@ class SavePayload(BaseModel):
     yaml_content: str
 
 
-#: Demo configs shipped with the dashboard, one per demo glider in
-#: pelagos_py.utils.demo_data.DEMOS (also used by
-#: ``examples/python/get_demo_file.py``). Read-only for the same reason as
-#: PROTECTED_CONFIGS below, and surfaced separately so the UI can group them.
+#: Demo configs, one per demo glider in pelagos_py.utils.demo_data.DEMOS. These
+#: are virtual -- there is no demo_<key>.yaml on disk for each one -- their
+#: YAML is synthesised on load by patching the glider's file path into one of
+#: the two shipped templates (see _demo_yaml). Read-only for the same reason
+#: as PROTECTED_CONFIGS below, and surfaced separately so the UI can group them.
 DEMO_CONFIGS = {f"demo_{key}.yaml" for key in DEMO_FILES}
 
-#: Reference configs shipped with the dashboard. They are read-only: the UI
-#: forks an edited one to a new ``custom_run_N.yaml`` rather than overwriting,
-#: and the API refuses to save or delete them, so a hand-crafted request (or a
-#: stale browser tab) can't destroy them either.
-PROTECTED_CONFIGS = {"default.yaml"} | DEMO_CONFIGS
+#: Reference configs shipped with the dashboard: the blank glider template and
+#: the ALR template every demo config is patched from. They are read-only: the
+#: UI forks an edited one to a new ``custom_run_N.yaml`` rather than
+#: overwriting, and the API refuses to save or delete them, so a hand-crafted
+#: request (or a stale browser tab) can't destroy them either.
+PROTECTED_CONFIGS = {"default.yaml", "demo_alr.yaml"} | DEMO_CONFIGS
 
 
 def _safe_config_path(name: str) -> Path:
@@ -296,10 +298,10 @@ def _demo_dest(config_name: str) -> Path | None:
     """The local path a demo config's NetCDF file lives (or would be downloaded
     to), or None if ``config_name`` isn't a demo config."""
     key = config_name[len("demo_"):-len(".yaml")]
-    if key not in DEMO_FILES:
+    entry = DEMO_FILES.get(key)
+    if entry is None:
         return None
-    _url, filename, _window = DEMO_FILES[key]
-    return REPO_ROOT / DEMO_DATA_DIR / filename
+    return REPO_ROOT / DEMO_DATA_DIR / entry.filename
 
 
 @app.get("/api/configs")
@@ -308,13 +310,25 @@ def list_configs():
         p.name for p in CONFIG_DIR.iterdir()
         if p.is_file() and p.suffix in (".yaml", ".yml")
     )
-    demo = sorted(DEMO_CONFIGS & set(files))
+    # Demo configs are virtual (see DEMO_CONFIGS above), so unlike the other
+    # groups they're listed unconditionally rather than filtered by `files`.
+    demo = sorted(DEMO_CONFIGS)
     return {
-        "configs": files,
+        "configs": sorted(set(files) | DEMO_CONFIGS),
         "protected": sorted(PROTECTED_CONFIGS),
         "demo": demo,
-        # Non-demo protected configs (default.yaml), shown as their own
-        # "Default" group in the picker.
+        # Demo config names grouped by deployment mission, in picker display
+        # order, so the UI can show which glider belongs to which campaign.
+        "missions": {
+            mission: [f"demo_{key}.yaml" for key in keys]
+            for mission, keys in MISSIONS.items()
+        },
+        # Display label per demo config name (glider names aren't unique --
+        # across missions, e.g. "Churchill" and "Zephyr" each appear twice,
+        # and within one glider, NRT vs Full is a separate entry).
+        "labels": {f"demo_{key}.yaml": entry.display_label for key, entry in DEMO_FILES.items()},
+        # Non-demo protected configs (default.yaml, demo_alr.yaml), shown as
+        # their own "Default" group in the picker.
         "reference": sorted((PROTECTED_CONFIGS - DEMO_CONFIGS) & set(files)),
         # Which demo configs already have their NetCDF file on disk, so the
         # picker can show download status before the file is needed.
@@ -357,13 +371,13 @@ def _ensure_demo_file(config_name: str) -> None:
     if dest is None or dest.exists():
         return
     key = config_name[len("demo_"):-len(".yaml")]
-    url, _filename, _window = DEMO_FILES[key]
+    entry = DEMO_FILES[key]
     dest.parent.mkdir(parents=True, exist_ok=True)
     import requests
 
     # Files are 100s of MB; only bound the connect phase so a slow-but-alive
     # transfer of a large file isn't mistaken for a hang.
-    response = requests.get(url, stream=True, timeout=(15, None))
+    response = requests.get(entry.url, stream=True, timeout=(15, None))
     response.raise_for_status()
     tmp = dest.with_name(dest.name + ".part")
     try:
@@ -375,18 +389,50 @@ def _ensure_demo_file(config_name: str) -> None:
         tmp.unlink(missing_ok=True)  # left behind only if the download failed
 
 
+_DEMO_FIELD_RE = {
+    field: re.compile(rf"(?m)^(\s*{field}:).*$")
+    for field in ("file_path", "output_path", "description")
+}
+
+
+def _demo_yaml(config_name: str) -> str:
+    """Synthesise a demo config's YAML by patching its glider's file path,
+    output path and description into the shared "default" or "alr" template
+    (see DemoEntry.template) -- every demo glider reuses one of those two
+    configs rather than shipping its own near-duplicate file.
+    """
+    key = config_name[len("demo_"):-len(".yaml")]
+    entry = DEMO_FILES[key]
+    template_name = "demo_alr.yaml" if entry.template == "alr" else "default.yaml"
+    text = (CONFIG_DIR / template_name).read_text()
+    rel_path = f"{DEMO_DATA_DIR}/{entry.filename}"
+    stem = Path(entry.filename).stem
+    text = _DEMO_FIELD_RE["file_path"].sub(
+        rf"\1 {rel_path}  # Path to the input NetCDF file", text, count=1,
+    )
+    text = _DEMO_FIELD_RE["output_path"].sub(
+        rf'\1 "{DEMO_DATA_DIR}/{stem}_Processed.nc"', text, count=1,
+    )
+    text = _DEMO_FIELD_RE["description"].sub(
+        rf"\1 A demo pipeline using {entry.display_label} data.", text, count=1,
+    )
+    return text
+
+
 @app.get("/api/configs/{name}")
 def load_config(name: str):
-    path = _safe_config_path(name)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Config not found.")
-    if path.name in DEMO_CONFIGS:
+    demo_name = name if name.endswith((".yaml", ".yml")) else f"{name}.yaml"
+    if demo_name in DEMO_CONFIGS:
         try:
-            _ensure_demo_file(path.name)
+            _ensure_demo_file(demo_name)
+            return {"name": demo_name, "yaml_content": _demo_yaml(demo_name)}
         except Exception as exc:
             raise HTTPException(
                 status_code=502, detail=f"Could not download demo data: {exc}"
             ) from exc
+    path = _safe_config_path(name)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Config not found.")
     return {"name": path.name, "yaml_content": path.read_text()}
 
 
