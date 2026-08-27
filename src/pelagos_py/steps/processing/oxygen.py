@@ -24,6 +24,7 @@ import pelagos_py.utils.diagnostics as diag
 #### Custom imports ####
 import matplotlib
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from pelagos_py.utils import fig_spec
 import numpy as np
 import pandas as pd
@@ -79,6 +80,14 @@ def _plot_section(data, var, pressure_var, step_name):
     plt.show(block=True)
 
 
+def _qc_good_mask(data, var):
+    # True where var isn't flagged bad (4); no QC var means nothing to exclude.
+    qc_name = f"{var}_QC"
+    if qc_name not in data:
+        return np.ones(data[var].shape, dtype=bool)
+    return data[qc_name].values != 4
+
+
 def _plot_diff(data, raw_var, corrected_var, pressure_var, step_name):
     # Two panels: raw+corrected overlaid on TIME, and TIME vs pressure_var (inverted)
     # coloured by (corrected - raw) - where in the water column the correction bites.
@@ -89,28 +98,38 @@ def _plot_diff(data, raw_var, corrected_var, pressure_var, step_name):
     fig, axes = fig_spec.new_fig(nrows=2, sharex=True)
     ax0, ax1 = axes[0][0], axes[1][0]
 
+    # Reserve the same width on ax0 as the colorbar takes on ax1, so the shared TIME axis lines up.
+    divider0 = make_axes_locatable(ax0)
+    cax0 = divider0.append_axes("right", size="3%", pad=0.15)
+    cax0.axis("off")
+
+    good = _qc_good_mask(data, raw_var) & _qc_good_mask(data, corrected_var)
     time = data["TIME"].values
-    fig_spec.points(ax0, time, data[raw_var].values, color=fig_spec.FLAGGED, label=raw_var)
-    fig_spec.points(ax0, time, data[corrected_var].values, color=fig_spec.CATEGORY[1], label=corrected_var)
+    fig_spec.points(ax0, time[good], data[raw_var].values[good], color=fig_spec.FLAGGED, label=raw_var)
+    fig_spec.points(ax0, time[good], data[corrected_var].values[good], color=fig_spec.CATEGORY[1], label=corrected_var)
     fig_spec.style_axes(ax0, ylabel=fig_spec.axis_label(corrected_var, data[corrected_var].attrs.get("units")))
-    fig_spec.legend(ax0)
+    # An outside (bbox_to_anchor) legend would need more width than the colorbar spacer
+    # reserves above, re-breaking the TIME-axis alignment with ax1 - so keep it inside.
+    ax0.legend(fontsize=fig_spec.FS_LEGEND, loc="upper right", framealpha=0.9, markerscale=2)
 
     diff = data[corrected_var].values - data[raw_var].values
     if pressure_var in data:
         pres = data[pressure_var].values
-        finite = np.isfinite(diff) & np.isfinite(pres)
+        finite = np.isfinite(diff) & np.isfinite(pres) & good
+        divider1 = make_axes_locatable(ax1)
+        cax1 = divider1.append_axes("right", size="3%", pad=0.15)
         sc = ax1.scatter(
             time[finite], pres[finite], c=diff[finite], cmap="viridis",
-            s=fig_spec.MARKER, alpha=fig_spec.ALPHA, rasterized=finite.sum() > fig_spec.RASTER_ABOVE,
+            s=fig_spec.MARKER, alpha=fig_spec.ALPHA, rasterized=True,
         )
-        cbar = fig.colorbar(sc, ax=ax1)
+        cbar = fig.colorbar(sc, cax=cax1)
         cbar.set_label(f"{corrected_var} - {raw_var}", fontsize=fig_spec.FS_LABEL)
         cbar.ax.tick_params(labelsize=fig_spec.FS_TICK)
         fig_spec.date_axis(ax1, which="x")
         fig_spec.style_axes(ax1, xlabel="TIME", ylabel=fig_spec.axis_label(pressure_var, data[pressure_var].attrs.get("units")))
         ax1.invert_yaxis()
     else:
-        fig_spec.points(ax1, time, diff, color=fig_spec.CATEGORY[0])
+        fig_spec.points(ax1, time[good], diff[good], color=fig_spec.CATEGORY[0])
         ax1.axhline(0, color="grey", alpha=0.7, zorder=0, linewidth=0.8)
         fig_spec.date_axis(ax1, which="x")
         fig_spec.style_axes(ax1, xlabel="TIME", ylabel=f"{corrected_var} - {raw_var}")
@@ -357,6 +376,41 @@ class PhasePressureCorrection(BaseStep, QCHandlingMixin):
         )
 
 
+def _plot_shift_diff(data, raw_var, shifted_var, pressure_var, step_name, lag_label):
+    # Single panel: TIME vs pressure_var (inverted), coloured by (shifted - raw); the
+    # raw/shifted overlay isn't useful here since a good shift looks almost identical to raw.
+    if raw_var not in data or shifted_var not in data or pressure_var not in data:
+        return
+
+    matplotlib.use("tkagg")
+    fig, axes = fig_spec.new_fig()
+    ax = axes[0][0]
+
+    good = _qc_good_mask(data, raw_var) & _qc_good_mask(data, shifted_var)
+    time, pres = data["TIME"].values, data[pressure_var].values
+    diff = data[shifted_var].values - data[raw_var].values
+    finite = np.isfinite(diff) & np.isfinite(pres) & good
+
+    sc = ax.scatter(
+        time[finite], pres[finite], c=diff[finite], cmap="viridis",
+        s=fig_spec.MARKER, alpha=fig_spec.ALPHA, rasterized=True,
+    )
+    cbar = fig.colorbar(sc, ax=ax)
+    cbar.set_label(f"{shifted_var} - {raw_var}", fontsize=fig_spec.FS_LABEL)
+    cbar.ax.tick_params(labelsize=fig_spec.FS_TICK)
+
+    ax.plot([], [], ls="", label=f"lag: {lag_label}")
+    ax.legend(fontsize=fig_spec.FS_LEGEND, loc="upper right", framealpha=0.9)
+
+    fig_spec.date_axis(ax, which="x")
+    ylabel = fig_spec.axis_label(pressure_var, data[pressure_var].attrs.get("units"))
+    fig_spec.style_axes(ax, ylabel=ylabel)
+    ax.invert_yaxis()
+
+    fig_spec.finish(fig, suptitle=f"{step_name} Diagnostics")
+    plt.show(block=True)
+
+
 @register_step
 class ShiftOxygenToCTD(BaseStep, QCHandlingMixin):
 
@@ -494,6 +548,7 @@ class ShiftOxygenToCTD(BaseStep, QCHandlingMixin):
         lag_lookup = None
         if self.lag_seconds is not None:
             self.log(f"Using constant lag of {self.lag_seconds} s.")
+            self._lag_label = f"{self.lag_seconds:.3f}s (constant)"
         else:
             if self.pitch_name not in self.data.data_vars or bool(
                 self.data[self.pitch_name].isnull().all()
@@ -513,6 +568,8 @@ class ShiftOxygenToCTD(BaseStep, QCHandlingMixin):
                 raise KeyError(f"[{self.step_name}] {self.cast_id_var} required but is missing from the data")
 
             lag_lookup = self._derive_profile_lag()
+            mean_lag = np.nanmean(list(lag_lookup.values())) if lag_lookup else np.nan
+            self._lag_label = f"per-profile (mean {mean_lag:.3f}s)" if np.isfinite(mean_lag) else "per-profile"
 
         for var in self.shift_vars:
             out_name = f"{var}_SHIFTED"
@@ -544,7 +601,7 @@ class ShiftOxygenToCTD(BaseStep, QCHandlingMixin):
 
     def generate_diagnostics(self):
         for var in self.shift_vars:
-            _plot_diff(self.data, var, f"{var}_SHIFTED", "PRES", self.step_name)
+            _plot_shift_diff(self.data, var, f"{var}_SHIFTED", "PRES", self.step_name, self._lag_label)
 
 
 @register_step
