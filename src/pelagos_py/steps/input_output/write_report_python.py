@@ -1092,6 +1092,7 @@ _CROSS_SECTION_PANELS = (
     {
         "label": "Oxygen",
         "candidates": (
+            "MOLAR_DOXY_ADJUSTED",  #   renamed fully corrected output, if the config adds that step
             "MOLAR_DOXY_PSAL_PRES",  #   fully corrected output of the oxygen processing chain
             "MOLAR_DOXY_PSAL",
             "MOLAR_DOXY",

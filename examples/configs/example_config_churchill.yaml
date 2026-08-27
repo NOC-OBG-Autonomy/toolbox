@@ -360,6 +360,13 @@ steps:
       uncalibrated_phase_correction_applied: true
     diagnostics: false
 
+  - name: Correct Values
+    parameters:
+      target_variable: MOLAR_DOXY_PSAL_PRES
+      output_as: MOLAR_DOXY_ADJUSTED
+      append_description: Renamed from MOLAR_DOXY_PSAL_PRES.
+    diagnostics: false
+
 # ===========================================================
 #                 CHLOROPHYLL CORRECTIONS
 # ===========================================================

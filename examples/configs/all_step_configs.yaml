@@ -628,6 +628,13 @@ steps:
       uncalibrated_phase_correction_applied: true
     diagnostics: false
 
+  - name: Correct Values
+    parameters:
+      target_variable: MOLAR_DOXY_PSAL_PRES
+      output_as: MOLAR_DOXY_ADJUSTED
+      append_description: Renamed from MOLAR_DOXY_PSAL_PRES.
+    diagnostics: false
+
 # ------------------------------------------------------------------------------------------- Report assembly -------------------------------------------------------------------------------------------
 
 # Report generation is currently under development (2026-02-12) and is subject to change
