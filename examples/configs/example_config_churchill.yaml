@@ -368,20 +368,20 @@ steps:
     diagnostics: false
 
 # ===========================================================
-#                 CHLOROPHYLL CORRECTIONS
+#                 PAR QC
 # ===========================================================
 # QC the PAR input to the quenching step below. Deliberately NO lower bound:
 # more than half the PAR record is negative, which is night and depth, not bad
 # data - and thomalla2018 builds its fl:bbp ratio from the night profiles, so
 # flagging those away would break the method. Only a physically impossible high
-# reading (solar max is around 2500) and a frozen sensor are flagged.
+# reading (solar max is around 4672) and a frozen sensor are flagged.
   - name: Apply QC
     parameters:
       qc_settings:
         range qc:
           variable_ranges:
             DOWNWELLING_PAR:
-              4: [-5, 2500, outside] # Absurd high, or a huge negative excursion
+              4: [-5, 4672, outside] # Absurd high, or a huge negative excursion
         stuck value qc: # A frozen reading means a dead sensor
           variables:
             DOWNWELLING_PAR: 5
@@ -405,6 +405,9 @@ steps:
       interpolate_ipar: true   # Fill Z_IPAR onto PAR-less casts (off: leave NaN)
     diagnostics: false         # Plots each scalar vs time: computed vs interpolated
 
+# ===========================================================
+#                 CHLOROPHYLL CORRECTIONS
+# ===========================================================
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped
 # without reordering steps.
