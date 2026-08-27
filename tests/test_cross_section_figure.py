@@ -89,3 +89,21 @@ def test_oxygen_panel_prefers_fully_corrected_variable(tmp_path):
     )
 
     assert resolved == "MOLAR_DOXY_PSAL_PRES"
+
+
+def test_oxygen_panel_prefers_adjusted_variable(tmp_path):
+    n = 200
+    ds = make_dataset(
+        n,
+        extra={
+            "MOLAR_DOXY": np.full(n, 200.0),
+            "MOLAR_DOXY_PSAL_PRES": np.full(n, 250.0),
+            "MOLAR_DOXY_ADJUSTED": np.full(n, 260.0),
+        },
+    )
+
+    resolved = wrp._first_present(
+        ds, next(p for p in wrp._CROSS_SECTION_PANELS if p["label"] == "Oxygen")["candidates"]
+    )
+
+    assert resolved == "MOLAR_DOXY_ADJUSTED"
