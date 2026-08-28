@@ -33,6 +33,7 @@ UNKNOWN = 0
 ASCENT = 1
 DESCENT = 2
 SURFACING = 3
+PARKING = 4
 INFLECTION = 5
 PROPELLED = 6
 TRANSITION = 7
@@ -42,6 +43,7 @@ PHASE_COLOURS = {
     ASCENT: "#22c55e",
     DESCENT: "#3b82f6",
     SURFACING: "#f97316",
+    PARKING: "#a855f7",
     INFLECTION: "#06b6d4",
     PROPELLED: "#ef4444",
     TRANSITION: "#eab308",
@@ -52,6 +54,7 @@ PHASE_NAMES = {
     ASCENT: "1 Ascent",
     DESCENT: "2 Descent",
     SURFACING: "3 Surfacing",
+    PARKING: "4 Parking",
     INFLECTION: "5 Inflection",
     PROPELLED: "6 Propelled",
     TRANSITION: "7 Transition",
@@ -137,18 +140,20 @@ def _classify_ascent_descent(smoothed_velocity, time_seconds, chunk_id, velocity
 
 def _classify_propelled_surfacing(phase, depth, time_seconds, chunk_id,
                                    surfacing_depth_threshold, min_duration_seconds,
-                                   min_transect_duration_seconds):
+                                   min_transect_duration_seconds, transect_phase):
     # Applied only to what ascent/descent left unknown. A flat, undulating stretch
-    # under propulsion (ALR-style) is propelled, gated by a much longer minimum
-    # duration than surfacing so a turnaround isn't mistaken for one - a turn also
-    # sits near-zero velocity briefly, but only for seconds, not minutes.
+    # away from the surface, gated by a much longer minimum duration than surfacing
+    # so a turnaround isn't mistaken for one (a turn also sits near-zero velocity
+    # briefly, but only for seconds, not minutes), is either propelled (ALR-class
+    # platforms, which actually have thrusters) or parking (everything else, which
+    # can only be drifting) - see `transect_phase`.
     for rs, re in _runs_by_chunk(phase == UNKNOWN, chunk_id):
         duration = time_seconds[re - 1] - time_seconds[rs]
         if np.median(depth[rs:re]) <= surfacing_depth_threshold:
             if duration >= min_duration_seconds:
                 phase[rs:re] = SURFACING
         elif duration >= min_transect_duration_seconds:
-            phase[rs:re] = PROPELLED
+            phase[rs:re] = transect_phase
 
 
 def _classify_inflection(phase, depth, chunk_id, surfacing_depth_threshold):
@@ -256,6 +261,7 @@ def find_profiles(
     gap_threshold_minutes=5,
     surfacing_depth_threshold=2.0,
     min_transect_duration_seconds=300,
+    transect_phase=PARKING,
 ):
     df = df_raw.dropna(subset=["TIME", depth_col]).sort_values("TIME")
 
@@ -267,7 +273,11 @@ def find_profiles(
         df_raw["GRADIENT"] = np.nan
         return df_raw
 
-    time_seconds = df["TIME"].to_numpy().astype("int64") / 1e9
+    # astype("int64") on a datetime64 array assumes its native unit; pandas'
+    # default resolution varies by version/source (ns historically, us as of
+    # pandas 3), so normalize to ns first or the deltas below are silently
+    # off by a unit-dependent factor (e.g. 1000x under datetime64[us]).
+    time_seconds = df["TIME"].to_numpy().astype("datetime64[ns]").astype("int64") / 1e9
     depth = df[depth_col].to_numpy(dtype=float)
 
     chunk_id = _compute_chunk_id(time_seconds, gap_threshold_minutes * 60)
@@ -281,6 +291,7 @@ def find_profiles(
     _classify_propelled_surfacing(
         phase, depth, time_seconds, chunk_id,
         surfacing_depth_threshold, min_duration_seconds, min_transect_duration_seconds,
+        transect_phase,
     )
     _classify_inflection(phase, depth, chunk_id, surfacing_depth_threshold)
     _classify_transition(phase, depth, chunk_id, surfacing_depth_threshold)
@@ -288,7 +299,7 @@ def find_profiles(
     direction = np.full(len(phase), np.nan)
     direction[phase == ASCENT] = -1
     direction[phase == DESCENT] = 1
-    direction[(phase == SURFACING) | (phase == PROPELLED)] = 0
+    direction[(phase == SURFACING) | (phase == PROPELLED) | (phase == PARKING)] = 0
 
     profile_num, cycle = _assign_profile_and_cycle(phase, chunk_id)
 
@@ -331,8 +342,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
     ``SCI_PHASE``. This step's scope:
 
     - **0 – unknown**: the default until reclassified below, and where it stays if
-      nothing below applies (including a passively-drifting "parking" stretch,
-      which this step does not attempt to detect).
+      nothing below applies.
     - **1 – ascent** / **2 – descent**: vertical velocity beyond ``velocity_threshold``,
       sustained for at least ``min_duration_seconds``. This pass runs first and always
       wins — nothing later ever overrides an ascent/descent classification.
@@ -340,11 +350,13 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
       at or below ``surfacing_depth_threshold``) once ascent/descent is settled —
       covers both a flat/undulating stretch at the surface and the shoulder or apex
       of a turn that happens to be shallow.
+    - **4 – parking** / **6 – propelled**: a flat, undulating stretch away from the
+      surface, gated by the longer ``min_transect_duration_seconds`` so a turnaround
+      (also briefly near-zero velocity) isn't mistaken for one. Which of the two it's
+      labelled is controlled by ``transect_phase`` — parking is a passive drift,
+      propelled means the platform is actually under thruster power (ALR-class).
     - **5 – inflection**: the single deepest/shallowest sample of a non-surface turn
       between a descent and an ascent (or vice versa, for a mid-water turn).
-    - **6 – propelled**: a flat, undulating stretch under propulsion away from the
-      surface, gated by the longer ``min_transect_duration_seconds`` so a turnaround
-      (also briefly near-zero velocity) isn't mistaken for one.
     - **7 – transition**: whatever's still unknown on the shoulder of a turn, between
       an inflection/surfacing point and the ascent/descent either side of it.
 
@@ -374,9 +386,16 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         Depth below which a propelled stretch, or the apex/shoulder of a turn, is
         classified surfacing instead — judged on run median depth. Default ``2.0``.
     min_transect_duration_seconds : int, optional
-        Minimum duration for an unknown run to be classified propelled. Deliberately
-        much longer than ``min_duration_seconds``, since a turnaround also sits
-        near-zero velocity for a few seconds but never for minutes. Default ``300``.
+        Minimum duration for an unknown run to be classified parking/propelled.
+        Deliberately much longer than ``min_duration_seconds``, since a turnaround
+        also sits near-zero velocity for a few seconds but never for minutes.
+        Default ``300``.
+    transect_phase : {"auto", "parking", "propelled"}, optional
+        Which phase a long, flat, non-surface "unknown" stretch is classified as.
+        ``"parking"`` — passive drift, ``"propelled"`` — under thruster power
+        (ALR-class platforms). ``"auto"`` looks for ``"ALR"`` in the source
+        filename and picks ``"propelled"`` if found, else falls back to
+        ``"parking"``. Default ``"auto"``.
 
     Examples
     --------
@@ -403,6 +422,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
               gap_threshold_minutes: 5
               surfacing_depth_threshold: 2.0
               min_transect_duration_seconds: 300
+              transect_phase: "auto"
 
     References
     ----------
@@ -451,7 +471,14 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
         "min_transect_duration_seconds": {
             "type": int,
             "default": 300,
-            "description": "Minimum duration for an unknown run to be classified propelled."
+            "description": "Minimum duration for an unknown run to be classified parking/propelled."
+        },
+        "transect_phase": {
+            "type": str,
+            "default": "auto",
+            "options": ["auto", "parking", "propelled"],
+            "description": "Phase for a long, flat, non-surface unknown stretch. 'auto' detects "
+                            "'ALR' in the source filename and picks 'propelled', else 'parking'."
         },
     }
 
@@ -480,6 +507,12 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
             calc_mask &= self.data[depth_qc_var].values != 8
         df_raw.loc[~calc_mask, depth_col] = np.nan
 
+        if self.transect_phase == "auto":
+            source_file = self.context.get("global_parameters", {}).get("source_file") or ""
+            transect_phase = PROPELLED if "ALR" in str(source_file).upper() else PARKING
+        else:
+            transect_phase = PROPELLED if self.transect_phase == "propelled" else PARKING
+
         df_final = find_profiles(
             df_raw, depth_col,
             smoothing_window_seconds=self.smoothing_window_seconds,
@@ -488,6 +521,7 @@ class FindProfilesStep(BaseStep, QCHandlingMixin):
             gap_threshold_minutes=self.gap_threshold_minutes,
             surfacing_depth_threshold=self.surfacing_depth_threshold,
             min_transect_duration_seconds=self.min_transect_duration_seconds,
+            transect_phase=transect_phase,
         )
 
         if self.diagnostics:
