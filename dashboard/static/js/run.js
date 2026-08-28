@@ -26,12 +26,14 @@ const Run = {
 
   // Marker prefixes run_bootstrap.py prints on stdout:
   //   __PELAGOS_FIG__ <filename>\t<caption>          a saved diagnostic figure
+  //   __PELAGOS_LOG__ <idx>\t<step>\t<qc test>\t<b64> a log-only step's diagnostics text
   //   __PELAGOS_STEP__ <index>\t<step>[\t<qc test>]  about to execute
   //   __PELAGOS_PAUSE__ <index>\t<step>[\t<qc test>] paused, awaiting the user
   //   __PELAGOS_RERUN__ <index>                      re-running the paused unit
   //   __PELAGOS_MEM__ <rss>\t<peak>\t<data>\t<label> RSS after a step (MB)
   //   __PELAGOS_REPORT__ <abspath>\t<filename>          a PDF report was written
   FIG_MARKER: '__PELAGOS_FIG__ ',
+  LOG_MARKER: '__PELAGOS_LOG__ ',
   STEP_MARKER: '__PELAGOS_STEP__ ',
   PAUSE_MARKER: '__PELAGOS_PAUSE__ ',
   RERUN_MARKER: '__PELAGOS_RERUN__ ',
@@ -176,7 +178,7 @@ const Run = {
   // prefix keeps such a marker from being swallowed as progress output.
   markerAt(plain) {
     let best = null;
-    for (const marker of [Run.FIG_MARKER, Run.STEP_MARKER, Run.PAUSE_MARKER,
+    for (const marker of [Run.FIG_MARKER, Run.LOG_MARKER, Run.STEP_MARKER, Run.PAUSE_MARKER,
       Run.RERUN_MARKER, Run.MEM_MARKER, Run.REPORT_MARKER]) {
       const at = plain.indexOf(marker);
       if (at >= 0 && (best === null || at < best.at)) best = { marker, at };
@@ -214,6 +216,22 @@ const Run = {
       if (path) {
         Run.showReport(path, name);
         Run.append('  · report: ' + name + ' (open it in the Report tab)');
+      }
+      return;
+    }
+    if (marker === Run.LOG_MARKER) {
+      // Payload is "<index>\t<step>\t<qc test>\t<base64 text>" — a log-only
+      // step's diagnostics text (it drew no figure), base64 so newlines and
+      // tabs in the captured output can't break the marker line.
+      const parts = plain.slice(marker.length).split('\t');
+      const idx = parseInt(parts[0], 10);
+      const name = (parts[1] || '').trim();
+      const test = (parts[2] || '').trim() || null;
+      let text = '';
+      try { text = decodeURIComponent(escape(atob(parts[3] || ''))); } catch (e) { /* malformed payload */ }
+      if (Number.isInteger(idx) && text) {
+        Run.addLog(idx, name, test, text);
+        Run.append('  · diagnostics: ' + (test || name) + ' (log)');
       }
       return;
     }
@@ -297,6 +315,29 @@ const Run = {
     if (Review.active && Review.key === cur.key) Review.renderPlots();
   },
 
+  // Record a log-only step's diagnostics text against the current step/attempt.
+  // Stored as a pseudo-figure (`isLog: true`) in the same `figs` array as real
+  // plots, so the gallery/review rendering, attempt bookkeeping and re-run
+  // handling all work unchanged — only Viewer.card() needs to know the
+  // difference (see viewer.js).
+  addLog(idx, name, test, text) {
+    if (!text) return;
+    const cur = Run.currentStep && Run.currentStep.index === idx
+      ? Run.currentStep
+      : { index: idx, name, test, key: Run.unitKey(idx, test) };
+    if (!Run.activeGroup || Run.activeGroup.key !== cur.key) {
+      Run.activeGroup = {
+        index: cur.index, key: cur.key, step: cur.name || name, test: cur.test,
+        figs: [], params: Run.pendingParams,
+      };
+      Run.pendingParams = null;
+      Run.groups.push(Run.activeGroup);
+    }
+    Run.activeGroup.figs.push({ isLog: true, text, caption: '' });
+    Run.renderGallery();
+    if (Review.active && Review.key === cur.key) Review.renderPlots();
+  },
+
   groupsFor(key) {
     return Run.groups.filter((g) => g.key === key);
   },
@@ -313,7 +354,7 @@ const Run = {
     const at = Run.groups.indexOf(group);
     if (at < 0) return;
     Run.groups.splice(at, 1);
-    Run.plotCount -= group.figs.length;
+    Run.plotCount -= group.figs.filter((f) => !f.isLog).length;
     if (Run.activeGroup === group) Run.activeGroup = null;
     Run.renderGallery();
     Run.updatePlotTab();

@@ -179,6 +179,17 @@ const Viewer = {
     const it = items[index];
     const fig = document.createElement('figure');
     fig.className = 'plot-card' + (cls ? ' ' + cls : '');
+    if (it.isLog) {
+      // A log-only step (e.g. Load Data, Export) draws no figure — show the
+      // diagnostics text it printed instead of an (nonexistent) image.
+      fig.classList.add('log-card');
+      const pre = document.createElement('pre');
+      pre.className = 'log-card-text';
+      pre.textContent = it.text;
+      fig.appendChild(pre);
+      fig.title = 'Diagnostics log — this step prints a summary instead of plotting';
+      return fig;
+    }
     const img = document.createElement('img');
     img.src = Viewer.src(it);
     img.alt = it.caption || it.fname;

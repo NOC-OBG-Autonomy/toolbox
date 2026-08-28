@@ -219,7 +219,12 @@ const Review = {
         const g = attempts[k];
         const cell = document.createElement('div');
         cell.className = 'review-thumb' + (g === current ? ' selected' : '');
-        if (g.figs.length) {
+        if (g.figs.length && g.figs[0].isLog) {
+          const pre = document.createElement('pre');
+          pre.className = 'log-card-text log-card-text-compact';
+          pre.textContent = g.figs[0].text;
+          cell.appendChild(pre);
+        } else if (g.figs.length) {
           const img = document.createElement('img');
           img.src = Viewer.src(g.figs[0]);
           img.alt = `attempt ${Run.attemptNo(g)}`;

@@ -22,8 +22,20 @@ backend and neutralises backend switches, so no step can grab a GUI backend
 This is deliberately dashboard-only glue: it changes nothing in pelagos_py, it
 just wraps how the plots are surfaced. Only steps that actually call
 ``plt.show`` (i.e. ``diagnostics: true``) produce plots here.
+
+A step whose diagnostics are log-only (e.g. Load Data, Export — they print a
+summary instead of plotting) draws no figure, so it gets a ``__PELAGOS_LOG__``
+marker instead::
+
+    __PELAGOS_LOG__ <step index>\t<step name>\t<QC test or "">\t<base64 text>
+
+so the dashboard can show that text where a plot would otherwise go. See
+``_patch_diagnostics_capture``.
 """
 
+import base64
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -241,6 +253,91 @@ def _capture_show(*args, **kwargs):
 plt.show = _capture_show
 
 
+class _Tee:
+    """A writable stream that mirrors everything to two underlying streams."""
+
+    def __init__(self, primary, secondary):
+        self._primary = primary
+        self._secondary = secondary
+
+    def write(self, s):
+        self._primary.write(s)
+        self._secondary.write(s)
+        return len(s)
+
+    def flush(self):
+        self._primary.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._primary, name)
+
+
+# Text captured from a step's diagnostics call when it drew no figure, so it
+# can be shown as a "log" in the dashboard instead of a plot. ``None`` means
+# "not capturing" (the fast path, for every non-pausable step); a list means
+# the current step is pausable and its diagnostics text is being collected.
+_diag_capture = {"chunks": None}
+
+
+def _patch_diagnostics_capture():
+    """Make every step's diagnostics call capture its printed text.
+
+    Piggybacks on ``BaseStep._wrap_diagnostics_timing``, which already wraps
+    ``generate_diagnostics``/``plot_diagnostics`` per-instance for every step.
+    When the wrapped call draws no new figure (a load/export-style step that
+    only prints a summary), its stdout is stashed in ``_diag_capture`` so
+    ``_emit_diag_log`` can announce it as a ``__PELAGOS_LOG__`` marker once the
+    step finishes — the dashboard then shows that text in place of a plot.
+    """
+    from pelagos_py.steps.base_step import BaseStep
+
+    orig_wrap = BaseStep._wrap_diagnostics_timing
+
+    def wrap_with_capture(self):
+        orig_wrap(self)
+        for attr in ("generate_diagnostics", "plot_diagnostics"):
+            method = getattr(self, attr, None)
+            if not callable(method):
+                continue
+
+            def captured(*args, _method=method, **kwargs):
+                if _diag_capture["chunks"] is None:
+                    return _method(*args, **kwargs)
+                fig_before = _saved["n"]
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(_Tee(sys.stdout, buf)):
+                    result = _method(*args, **kwargs)
+                if _saved["n"] == fig_before and buf.getvalue().strip():
+                    _diag_capture["chunks"].append(buf.getvalue())
+                return result
+
+            setattr(self, attr, captured)
+
+    BaseStep._wrap_diagnostics_timing = wrap_with_capture
+
+
+def _begin_diag_capture(pausable):
+    _diag_capture["chunks"] = [] if pausable else None
+
+
+def _emit_diag_log(idx, name, test):
+    """Print a ``__PELAGOS_LOG__`` marker for text captured since ``_begin_diag_capture``.
+
+    No-op unless the step actually printed diagnostics text and drew no
+    figure. Fields (tab-separated): step index, step name, QC test (or empty),
+    base64-encoded text.
+    """
+    chunks = _diag_capture["chunks"]
+    _diag_capture["chunks"] = None
+    if not chunks:
+        return
+    text = "\n".join(chunks).strip()
+    if not text:
+        return
+    payload = base64.b64encode(text.encode()).decode()
+    print(f"__PELAGOS_LOG__ {idx}\t{name}\t{test or ''}\t{payload}", flush=True)
+
+
 def _emit_report(context, since):
     """Announce a PDF report a step just wrote, for the dashboard's Report tab.
 
@@ -358,6 +455,7 @@ def main():
         from pelagos_py.pipeline import REPORT_STEP_NAME, SEVERE, STOP, Pipeline
         from pelagos_py.utils.valid_config_check import check_pipeline_variables
 
+        _patch_diagnostics_capture()
         pipeline = Pipeline(config_path=config_path)
 
         # Mirror Pipeline.run()'s pre-flight validation.
@@ -411,9 +509,11 @@ def main():
             mem_label = step_config.get("name", "") + (f" · {test}" if test else "")
             _mem_begin(mem_label)
             report_since = time.time()
+            _begin_diag_capture(pausable)
             try:
                 context = pipeline.execute_step(step_config, context)
             except (RuntimeError, SystemExit):
+                _diag_capture["chunks"] = None
                 # Mirror Pipeline.run()'s continue_on_step_fail handling, which
                 # this loop otherwise bypasses by driving execute_step() itself.
                 if not pipeline.global_parameters.get("continue_on_step_fail", True):
@@ -425,6 +525,7 @@ def main():
                 # detail; this just marks the step skipped.
                 pipeline.logger.log(SEVERE, "Step '%s' failed and was skipped.", label)
                 continue
+            _emit_diag_log(idx, step_config.get("name", ""), test)
             _emit_mem(context)
             # A report step drops a PDF under out_directory; surface it so the
             # dashboard can offer to open it once the run reaches it.
@@ -465,7 +566,9 @@ def main():
                     )
                     # Fresh copy each re-run so repeated re-runs all start clean.
                     _mem_begin(mem_label)
+                    _begin_diag_capture(True)  # only a pausable unit can be re-run
                     context = pipeline.execute_step(rerun_config, _snapshot(snapshot))
+                    _emit_diag_log(idx, step_config.get("name", ""), test)
                     _emit_mem(context)
         pipeline._context = context
     except KeyboardInterrupt:
