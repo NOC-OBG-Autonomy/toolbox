@@ -30,6 +30,51 @@ import os
 
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.collections import PathCollection
+from matplotlib.lines import Line2D
+
+#   Report PNGs render at a fixed size regardless of how many points a step
+#   plotted, so a million-point diagnostic costs as much to rasterize as the
+#   thumbnail needs to look dense. Decimate dense point layers just for the
+#   save, restoring the original data immediately after - a step's own
+#   interactive display (diagnostics enabled by the user) still gets every
+#   point, only the saved-to-disk copy is thinned.
+_CAPTURE_MAX_POINTS = 100_000
+
+
+@contextlib.contextmanager
+def _decimated_for_save(fig):
+    """Temporarily thin dense Line2D/scatter artists in ``fig`` to a point cap."""
+    restore = []
+    for ax in fig.axes:
+        for artist in ax.lines:
+            x, y = artist.get_data()
+            if len(x) > _CAPTURE_MAX_POINTS:
+                idx = np.linspace(0, len(x) - 1, _CAPTURE_MAX_POINTS).astype(int)
+                restore.append((artist, x, y))
+                artist.set_data(np.asarray(x)[idx], np.asarray(y)[idx])
+        for artist in ax.collections:
+            if not isinstance(artist, PathCollection):
+                continue
+            offsets = artist.get_offsets()
+            if len(offsets) > _CAPTURE_MAX_POINTS:
+                idx = np.linspace(0, len(offsets) - 1, _CAPTURE_MAX_POINTS).astype(int)
+                array = artist.get_array()
+                restore.append((artist, offsets, array))
+                artist.set_offsets(offsets[idx])
+                if array is not None:
+                    artist.set_array(array[idx])
+    try:
+        yield
+    finally:
+        for artist, a, b in restore:
+            if isinstance(artist, Line2D):
+                artist.set_data(a, b)
+            else:
+                artist.set_offsets(a)
+                if b is not None:
+                    artist.set_array(b)
 
 
 @contextlib.contextmanager
@@ -83,7 +128,8 @@ def _save_open_figures(
         fig = plt.figure(num)
         path = os.path.join(outdir, f"{safe}_{len(images) + 1}.png")
         try:
-            fig.savefig(path, dpi=150, bbox_inches="tight")
+            with _decimated_for_save(fig):
+                fig.savefig(path, dpi=150, bbox_inches="tight")
             images.append(path)
         except Exception:  # noqa: BLE001 - a capture failure must never be fatal
             pass

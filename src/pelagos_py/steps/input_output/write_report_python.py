@@ -1135,8 +1135,15 @@ _CS_ALLOWED_QC_FLAGS = (0, 1, 2, 5, 8)
 
 #   Gliders log millions of measurements; a million-point scatter renders slowly
 #   and bloats the PDF. Thin (consistently across panels, so points stay aligned)
-#   to this cap, which still looks dense on an A4 page.
-_CS_MAX_POINTS = 120_000
+#   to this cap, which still looks dense on an A4 page. Matches the per-step
+#   diagnostic capture cap (diagnostic_capture._CAPTURE_MAX_POINTS) for consistency.
+_CS_MAX_POINTS = 100_000
+
+#   qc_hist's source-series panel is a single line in a ~4in-wide half-page
+#   panel, not a full A4 page of stacked panels, so it needs far fewer points
+#   to look dense. The histogram panel bins the full flag array unthinned,
+#   since subsampling would change the counts.
+_QC_HIST_MAX_POINTS = 20_000
 
 
 def _first_present(data: xr.Dataset, names) -> str:
@@ -1329,7 +1336,12 @@ def qc_hist(
             0.2, 0.5, f"Data ({var_source}) are NaN", transform=axs[0].transAxes
         )
     else:
-        data[var_source].plot(ax=axs[0])
+        source = data[var_source]
+        n = source.size
+        if n > _QC_HIST_MAX_POINTS:
+            idx = np.linspace(0, n - 1, _QC_HIST_MAX_POINTS).astype(int)
+            source = source.isel({source.dims[0]: idx})
+        source.plot(ax=axs[0])
     #   xarray labels the axis with the (often long) description; replace it with
     #   a short name + units so the plot stays uncluttered. Skip the units when
     #   absent or explicitly "None" (e.g. PHASE) so no "[None]" is shown.
