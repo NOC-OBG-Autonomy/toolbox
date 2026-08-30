@@ -45,6 +45,22 @@ _PIPELINE_LOGGER_NAME = "pelagos_py.pipeline"
 """Global logger name for the pipeline. Used to create child loggers for steps."""
 
 
+def resolve_continue_on_step_fail(value):
+    """Interpret the ``continue_on_step_fail`` pipeline setting.
+
+    Accepts a real bool (legacy configs) or the strings ``"true"``/``"false"``/
+    ``"auto"``. ``"auto"`` means "pause for review" in an environment that can
+    do that (the dashboard); a caller that cannot pause (e.g. a plain script
+    run) should treat it the same as ``True`` (skip and continue).
+    """
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v == "auto":
+            return "auto"
+        return v == "true"
+    return bool(value)
+
+
 def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
     """
     Set up logging for the entire pipeline.
@@ -435,9 +451,14 @@ class Pipeline(ConfigMirrorMixin):
             if report_present
             else contextlib.nullcontext()
         )
-        continue_on_step_fail = self.global_parameters.get(
-            "continue_on_step_fail", True
+        continue_on_step_fail = resolve_continue_on_step_fail(
+            self.global_parameters.get("continue_on_step_fail", "auto")
         )
+        if continue_on_step_fail == "auto":
+            # A plain script run has no way to pause for review, so "auto"
+            # falls back to skip-and-continue here (the dashboard's own driver
+            # loop interprets "auto" itself -- see run_bootstrap.py).
+            continue_on_step_fail = True
         try:
             with backend_ctx:
                 for step in self.steps:

@@ -142,6 +142,7 @@ def _plot_diff(data, raw_var, corrected_var, pressure_var, step_name):
 class DeriveUncalibratedPhase(BaseStep, QCHandlingMixin):
 
     step_name = "Derive Uncalibrated Phase"
+    provided_variables = ["UNCAL_PHASE_DOXY"]
 
     parameter_schema = {
         "blue_phase_name": {
@@ -220,6 +221,7 @@ class DeriveUncalibratedPhase(BaseStep, QCHandlingMixin):
 class DeriveOptodeTemperature(BaseStep, QCHandlingMixin):
 
     step_name = "Derive Optode Temperature"
+    provided_variables = ["TEMP_DOXY"]
 
     parameter_schema = {
         "temp_voltage_name": {
@@ -297,6 +299,7 @@ class DeriveOptodeTemperature(BaseStep, QCHandlingMixin):
 class PhasePressureCorrection(BaseStep, QCHandlingMixin):
 
     step_name = "Phase Pressure Correction"
+    provided_variables = ["UNCAL_PHASE_DOXY_PCORR"]
 
     parameter_schema = {
         "optode_pressure_name": {
@@ -608,6 +611,7 @@ class ShiftOxygenToCTD(BaseStep, QCHandlingMixin):
 class DeriveCalibratedPhase(BaseStep, QCHandlingMixin):
 
     step_name = "Derive Calibrated Phase"
+    provided_variables = ["CAL_PHASE_DOXY"]
 
     parameter_schema = {
         "uncalibrated_phase_name": {
@@ -687,6 +691,7 @@ class DeriveCalibratedPhase(BaseStep, QCHandlingMixin):
 class DeriveOxygenConcentration(BaseStep, QCHandlingMixin):
 
     step_name = "Derive Oxygen Concentration"
+    provided_variables = ["MOLAR_DOXY"]
 
     parameter_schema = {
         "method": {
@@ -828,6 +833,7 @@ class DeriveOxygenConcentration(BaseStep, QCHandlingMixin):
 class MolarDOXYSalinityCorrection(BaseStep, QCHandlingMixin):
 
     step_name = "Molar DOXY Salinity Correction"
+    provided_variables = ["MOLAR_DOXY_PSAL"]
 
     parameter_schema = {
         "salinity_name": {
@@ -968,6 +974,7 @@ class MolarDOXYSalinityCorrection(BaseStep, QCHandlingMixin):
 class MolarDOXYPressureCorrection(BaseStep, QCHandlingMixin):
 
     step_name = "Molar DOXY Pressure Correction"
+    provided_variables = ["MOLAR_DOXY_PSAL_PRES"]
 
     parameter_schema = {
         "pressure_name": {

@@ -77,6 +77,10 @@ class CorrectValues(BaseStep):
         Note written to the output variable's ``comment`` attribute (e.g.
         ``"Renamed from LATITUDE_GPS"``). ``append_description`` adds to any existing
         comment; ``overwrite_description`` replaces it. Set at most one.
+    optional : bool, optional
+        If ``True``, skip silently (instead of raising) when ``target_variable`` is
+        absent -- e.g. a rename step that only applies under one of several file
+        naming conventions. Default ``False``.
 
     Examples
     --------
@@ -156,6 +160,13 @@ class CorrectValues(BaseStep):
             "default": None,
             "description": "Optional note that replaces the output variable's 'comment' attribute.",
         },
+        "optional": {
+            "type": bool,
+            "default": False,
+            "description": "If True, skip silently (no error) when target_variable is absent "
+                           "from the data, e.g. a rename that only applies under one of "
+                           "several file naming conventions.",
+        },
     }
 
     def run(self):
@@ -164,6 +175,10 @@ class CorrectValues(BaseStep):
 
         var = self.target_variable
         if var not in self.data:
+            if self.optional:
+                self.log(f"'{var}' not found in dataset; skipping (optional).")
+                self.context["data"] = self.data
+                return self.context
             raise ValueError(
                 f"[{self.name}] target_variable '{var}' not found in dataset. "
                 f"Available variables: {list(self.data.data_vars)}."

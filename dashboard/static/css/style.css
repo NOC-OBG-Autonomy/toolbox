@@ -90,12 +90,14 @@ svg.ico { display: inline-block; vertical-align: -0.15em; flex: 0 0 auto; }
   flex: 1; min-width: 0;
 }
 /* Transient toolbar message (e.g. a locked config forking to custom_run_N).
-   Sits immediately left of the config controls it refers to. */
+   Always its own full-width row (flex-basis: 100% forces the wrap) rather
+   than competing inline with the picker for space, which used to overlap it
+   on narrower screens when the message was long. */
 .config-note {
   font-size: 11.5px; color: var(--accent); background: var(--accent-soft);
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-radius: var(--radius-sm); padding: 5px 10px;
-  margin-left: auto;
+  flex-basis: 100%; word-break: break-word;
 }
 /* A failed load/download stays up (see Config.notice's sticky option) and
    reads as an error rather than the routine accent-coloured info banner. */
@@ -576,6 +578,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v-issue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .v-where { color: var(--muted); font-size: 11px; font-weight: 600; }
 
+/* No loadable data at all: the config can't run anything, so this card is
+   raised above the routine per-step issues below it. */
+.v-issue.v-issue-critical {
+  border-left-width: 4px; border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.v-issue-icon { color: var(--danger); display: inline-flex; }
+
 /* Category tag. */
 .v-tag {
   font-size: 10px; font-weight: 700; text-transform: uppercase;
@@ -585,6 +595,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .v-tag-value, .v-tag-type { background: var(--warn-soft); color: #a87427; }
 .v-tag-missing { background: var(--danger-soft); color: #c25c5c; }
 .v-tag-unknown { background: var(--cat-proc-soft); color: #6f5cb0; }
+.v-tag-load { background: var(--danger); color: var(--panel); }
 
 .v-issue-body { display: flex; flex-direction: column; gap: 3px; }
 .v-detail { font-size: 11.5px; line-height: 1.5; }
@@ -710,6 +721,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .run-pause-status { flex: 1; font-size: 11px; color: var(--accent); text-align: right; }
 .run-pause-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
+/* The paused step's most recent attempt raised, instead of a normal
+   diagnostics pause -- same banner, red instead of accent-coloured. */
+.run-pause.run-pause-failed {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: var(--danger-soft);
+}
+.run-pause.run-pause-failed .pause-ico { color: var(--danger); }
+.run-pause.run-pause-failed .run-pause-status { color: var(--danger); }
+
 /* Plots tab: diagnostic figures captured from the run, grouped by step. */
 .plots-gallery { flex: 1; overflow: auto; min-height: 320px; padding: 4px; }
 .plot-step { margin-bottom: 22px; }
@@ -743,6 +763,13 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto;
 }
 .log-card-text-compact { max-height: 90px; font-size: 10px; }
+
+/* An error card is a log-card for a step that raised, in the danger palette. */
+.plot-card.log-card.error-card {
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: var(--danger-soft);
+}
+.log-card-text.error-card-text { color: #a33; }
 
 /* ---------- Report tab: a PDF report the run produced ---------- */
 .report-view { flex: 1; display: flex; flex-direction: column; min-height: 360px; gap: 10px; }

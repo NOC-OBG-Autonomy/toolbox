@@ -23,6 +23,7 @@ from pelagos_py.utils.processing_utils import *
 import pelagos_py.utils.diagnostics as diag
 
 #### Custom imports ####
+import re
 import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -41,13 +42,22 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
     # (pre-existing; left as-is to avoid changing pipeline-validation behaviour).
     optional_variables = ["PROFILE_NUMBER"]
     variable_parameters = ["apply_to", "output_as"]
+    # apply_to has a fallback chain (see _resolve_beta_var) resolved by the
+    # step itself at run time, so the generic variable_parameters check can't
+    # tell whether it's actually missing.
+    variable_parameters_optional = ("apply_to",)
     uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
             "type": str,
-            "default": "BBP700",
-            "description": "Name of the variable to convert.",
+            "default": "BETA_BACKSCATTERING700",
+            "description": (
+                "Name of the beta backscatter variable to convert. If not found, "
+                "falls back to any other BETA_BACKSCATTERING<wavelength> variable "
+                "(closest to 700nm if several are present), then to a "
+                "BBP<wavelength> variable."
+            ),
         },
         "output_as": {
             "type": str,
@@ -74,7 +84,7 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
 
             - name: "BBP from Beta"
               parameters:
-                apply_to: "BBP700"
+                apply_to: "BETA_BACKSCATTERING700"
                 output_as: "BBP700"
                 theta: 124
                 xfactor: 1.076
@@ -86,9 +96,11 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
         """
         self.filter_qc()
 
+        self.beta_var = self._resolve_beta_var()
+
         # Get the required variables
         self.data_subset = self.data[
-            ["TIME", "PROFILE_NUMBER", "DEPTH", "TEMP", "PRAC_SALINITY", self.apply_to]
+            ["TIME", "PROFILE_NUMBER", "DEPTH", "TEMP", "PRAC_SALINITY", self.beta_var]
         ]
 
         # Gaps in TEMP/PRAC_SALINITY are left as NaN: BBP is not derived there and is
@@ -96,7 +108,7 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
 
         # Apply the correction
         bbp_corrected = gt.flo_functions.flo_bback_total(
-            self.data_subset[self.apply_to],
+            self.data_subset[self.beta_var],
             self.data_subset["TEMP"],
             self.data_subset["PRAC_SALINITY"],
             self.theta,
@@ -114,11 +126,11 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
         self.update_qc()
 
         # Generate QC if a new variable is added. Otherwise warn the user that input is being overwritten.
-        if self.apply_to != self.output_as:
-            self.generate_qc({f"{self.output_as}_QC": [f"{self.apply_to}_QC"]})
+        if self.beta_var != self.output_as:
+            self.generate_qc({f"{self.output_as}_QC": [f"{self.beta_var}_QC"]})
         else:
             self.log_warn(
-                f"'apply_to' and 'output_as' are the same. This will cause {self.apply_to} to be overwritten."
+                f"'apply_to' and 'output_as' are the same. This will cause {self.beta_var} to be overwritten."
             )
 
         if self.diagnostics:
@@ -127,11 +139,58 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
         self.context["data"].update(self.data)
         return self.context
 
+    def _resolve_beta_var(self):
+        """Resolve the beta backscatter variable, walking down a fallback chain
+        when `apply_to` isn't present: any other BETA_BACKSCATTERING<wavelength>
+        variable (closest to 700nm if several), then a BBP<wavelength> variable.
+        """
+        full_vars = self.context["data"].data_vars
+        if self.apply_to in full_vars:
+            return self._pull_into_subset(self.apply_to)
+
+        fallback = self._closest_wavelength_var(full_vars, "BETA_BACKSCATTERING", exclude={self.apply_to})
+        if fallback:
+            self.log_warn(f"'{self.apply_to}' not found; using '{fallback}' instead.")
+            return self._pull_into_subset(fallback)
+
+        # TODO: current glider files from BODC mistakenly label raw beta backscatter
+        # as BBP<wavelength> (a derived-variable name); remove this fallback once
+        # BODC fixes the mislabelling upstream.
+        fallback = self._closest_wavelength_var(full_vars, "BBP")
+        if fallback:
+            self.log_warn(f"No BETA_BACKSCATTERING* variable found; using mislabelled '{fallback}' instead.")
+            return self._pull_into_subset(fallback)
+
+        raise ValueError(
+            f"'{self.apply_to}' not found, and no BETA_BACKSCATTERING* or BBP<wavelength> "
+            "variable is present to fall back to."
+        )
+
+    def _pull_into_subset(self, name):
+        # variable_parameters subsetting (QCHandlingMixin.__init__) only knows the
+        # configured apply_to, so a fallback name resolved here may not be in
+        # self.data yet.
+        if name not in self.data:
+            self.data[name] = self.context["data"][name]
+            if f"{name}_QC" in self.context["data"]:
+                self.data[f"{name}_QC"] = self.context["data"][f"{name}_QC"]
+        return name
+
+    @staticmethod
+    def _closest_wavelength_var(names, prefix, exclude=()):
+        pattern = re.compile(rf"^{re.escape(prefix)}(\d+)$")
+        candidates = [
+            (abs(int(match.group(1)) - 700), name)
+            for name in names
+            if name not in exclude and (match := pattern.match(name))
+        ]
+        return min(candidates)[1] if candidates else None
+
     def generate_diagnostics(self):
         mpl.use("tkagg")
 
         # Clean both datasets
-        beta_clean = remove_outliers(self.data_subset[self.apply_to])
+        beta_clean = remove_outliers(self.data_subset[self.beta_var])
         bbp_clean = remove_outliers(self.data[self.output_as])
 
         # Plot

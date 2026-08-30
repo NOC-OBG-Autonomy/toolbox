@@ -120,8 +120,13 @@ const Config = {
 
     const pipeline = (cfg && cfg.pipeline) || {};
     for (const spec of STATE.registry.pipeline_fields) {
-      STATE.pipeline.settings[spec.name] =
-        spec.name in pipeline ? pipeline[spec.name] : Forms.defaultValue(spec);
+      let val = spec.name in pipeline ? pipeline[spec.name] : Forms.defaultValue(spec);
+      // Legacy configs store this as a real YAML bool; the field is now a
+      // three-way select ("auto"/"true"/"false"), so normalise to match.
+      if (spec.name === 'continue_on_step_fail' && typeof val === 'boolean') {
+        val = val ? 'true' : 'false';
+      }
+      STATE.pipeline.settings[spec.name] = val;
     }
 
     const steps = (cfg && cfg.steps) || [];
@@ -258,6 +263,10 @@ const Config = {
   // Put `text` into the config editor and the builder, keeping the raw YAML if
   // it doesn't map cleanly onto the registry.
   apply(text) {
+    // Loading a *different* config outright replaces whatever the previous
+    // one's validation showed -- without this it would sit there, looking
+    // like it applies to the new config, until the next debounced check lands.
+    if (typeof showValidating === 'function') showValidating(true);
     Config.loading = true;
     // fromYAML below pushes this same text into the builder, so the editor's
     // own change event must not *also* schedule a deferred YAML→builder sync:

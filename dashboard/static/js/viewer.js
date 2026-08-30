@@ -181,13 +181,17 @@ const Viewer = {
     fig.className = 'plot-card' + (cls ? ' ' + cls : '');
     if (it.isLog) {
       // A log-only step (e.g. Load Data, Export) draws no figure — show the
-      // diagnostics text it printed instead of an (nonexistent) image.
+      // diagnostics text it printed instead of a (nonexistent) image. An
+      // error card is the same shape, shown when the step raised instead.
       fig.classList.add('log-card');
+      if (it.isError) fig.classList.add('error-card');
       const pre = document.createElement('pre');
       pre.className = 'log-card-text';
       pre.textContent = it.text;
       fig.appendChild(pre);
-      fig.title = 'Diagnostics log — this step prints a summary instead of plotting';
+      fig.title = it.isError
+        ? 'This step failed — edit its parameters and re-run, or Continue to skip it'
+        : 'Diagnostics log — this step prints a summary instead of plotting';
       return fig;
     }
     const img = document.createElement('img');

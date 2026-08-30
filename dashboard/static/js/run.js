@@ -27,6 +27,7 @@ const Run = {
   // Marker prefixes run_bootstrap.py prints on stdout:
   //   __PELAGOS_FIG__ <filename>\t<caption>          a saved diagnostic figure
   //   __PELAGOS_LOG__ <idx>\t<step>\t<qc test>\t<b64> a log-only step's diagnostics text
+  //   __PELAGOS_FAIL__ <idx>\t<step>\t<qc test>\t<b64> a step raised (continue_on_step_fail: auto)
   //   __PELAGOS_STEP__ <index>\t<step>[\t<qc test>]  about to execute
   //   __PELAGOS_PAUSE__ <index>\t<step>[\t<qc test>] paused, awaiting the user
   //   __PELAGOS_RERUN__ <index>                      re-running the paused unit
@@ -34,11 +35,18 @@ const Run = {
   //   __PELAGOS_REPORT__ <abspath>\t<filename>          a PDF report was written
   FIG_MARKER: '__PELAGOS_FIG__ ',
   LOG_MARKER: '__PELAGOS_LOG__ ',
+  FAIL_MARKER: '__PELAGOS_FAIL__ ',
   STEP_MARKER: '__PELAGOS_STEP__ ',
   PAUSE_MARKER: '__PELAGOS_PAUSE__ ',
   RERUN_MARKER: '__PELAGOS_RERUN__ ',
   MEM_MARKER: '__PELAGOS_MEM__ ',
   REPORT_MARKER: '__PELAGOS_REPORT__ ',
+
+  // Whether the unit currently paused on failed its most recent attempt
+  // (rather than pausing for review after a successful diagnostics step).
+  // Reset on every __PELAGOS_STEP__ and set by __PELAGOS_FAIL__, so it always
+  // reflects the outcome of the most recent execution attempt for that unit.
+  pauseFailed: false,
 
   report: null, // {path, name} of the PDF report the run produced, if any
 
@@ -178,8 +186,8 @@ const Run = {
   // prefix keeps such a marker from being swallowed as progress output.
   markerAt(plain) {
     let best = null;
-    for (const marker of [Run.FIG_MARKER, Run.LOG_MARKER, Run.STEP_MARKER, Run.PAUSE_MARKER,
-      Run.RERUN_MARKER, Run.MEM_MARKER, Run.REPORT_MARKER]) {
+    for (const marker of [Run.FIG_MARKER, Run.LOG_MARKER, Run.FAIL_MARKER, Run.STEP_MARKER,
+      Run.PAUSE_MARKER, Run.RERUN_MARKER, Run.MEM_MARKER, Run.REPORT_MARKER]) {
       const at = plain.indexOf(marker);
       if (at >= 0 && (best === null || at < best.at)) best = { marker, at };
     }
@@ -195,6 +203,7 @@ const Run = {
     if (hit) {
       // Anything before the marker is real console output that got glued on.
       if (hit.at > 0) Run.renderLine(plain.slice(0, hit.at));
+      Run.finalizeProgress();
       Run.handleMarker(hit.marker, plain.slice(hit.at));
       return;
     }
@@ -219,19 +228,26 @@ const Run = {
       }
       return;
     }
-    if (marker === Run.LOG_MARKER) {
-      // Payload is "<index>\t<step>\t<qc test>\t<base64 text>" — a log-only
-      // step's diagnostics text (it drew no figure), base64 so newlines and
-      // tabs in the captured output can't break the marker line.
+    if (marker === Run.LOG_MARKER || marker === Run.FAIL_MARKER) {
+      // Payload is "<index>\t<step>\t<qc test>\t<base64 text>" for both: a
+      // log-only step's diagnostics text, or a step's error text when it
+      // raised and continue_on_step_fail is "auto". Base64 so newlines/tabs in
+      // the captured text can't break the marker line.
       const parts = plain.slice(marker.length).split('\t');
       const idx = parseInt(parts[0], 10);
       const name = (parts[1] || '').trim();
       const test = (parts[2] || '').trim() || null;
+      const isError = marker === Run.FAIL_MARKER;
       let text = '';
       try { text = decodeURIComponent(escape(atob(parts[3] || ''))); } catch (e) { /* malformed payload */ }
       if (Number.isInteger(idx) && text) {
-        Run.addLog(idx, name, test, text);
-        Run.append('  · diagnostics: ' + (test || name) + ' (log)');
+        Run.addLog(idx, name, test, text, { isError });
+        if (isError) {
+          Run.pauseFailed = true;
+          Run.append('  · step failed: ' + text.split('\n')[0]);
+        } else {
+          Run.append('  · diagnostics: ' + (test || name) + ' (log)');
+        }
       }
       return;
     }
@@ -254,6 +270,7 @@ const Run = {
       if (!Number.isInteger(idx)) return;
       Run.currentStep = { index: idx, name: rest, test, key: Run.unitKey(idx, test) };
       Run.activeGroup = null; // each execution of a step opens a fresh attempt
+      Run.pauseFailed = false; // reflects the outcome of this attempt, not the last
       RunLock.stepStarted(idx);
     } else if (marker === Run.PAUSE_MARKER) {
       if (!Number.isInteger(idx)) return;
@@ -273,8 +290,24 @@ const Run = {
       Run.autoScroll();
       return;
     }
-    Run.progressEl = null; // any active bar is now permanent as last drawn
+    Run.finalizeProgress(); // any active bar is now permanent as last drawn
     Run.append(line);
+  },
+
+  // A closed tqdm bar (leave=False) erases itself rather than printing a final
+  // 100% frame, so the last redraw we saw can freeze mid-percentage once the
+  // step moves on. Force it to a completed frame before anything else prints.
+  finalizeProgress() {
+    if (!Run.progressEl) return;
+    const plain = Run.stripAnsi(Run.progressEl.textContent || '').replace(/\n+$/, '');
+    const m = plain.match(/^(.*?)\d+%\|([^|]*)\|\s*\d+\/(\d+)(.*)$/);
+    if (m) {
+      const [, desc, bar, total, tail] = m;
+      const doneTail = tail.replace(/<.*?\]/, '<00:00]');
+      const line = `${desc}100%|${'█'.repeat(bar.length)}| ${total}/${total}${doneTail}`;
+      Run.progressEl.innerHTML = Run.ansiToHtml(line) + '\n';
+    }
+    Run.progressEl = null;
   },
 
   // A transient in-place redraw: update the one live progress span.
@@ -315,12 +348,12 @@ const Run = {
     if (Review.active && Review.key === cur.key) Review.renderPlots();
   },
 
-  // Record a log-only step's diagnostics text against the current step/attempt.
-  // Stored as a pseudo-figure (`isLog: true`) in the same `figs` array as real
-  // plots, so the gallery/review rendering, attempt bookkeeping and re-run
-  // handling all work unchanged — only Viewer.card() needs to know the
-  // difference (see viewer.js).
-  addLog(idx, name, test, text) {
+  // Record a log-only step's diagnostics text (or a failed step's error text)
+  // against the current step/attempt. Stored as a pseudo-figure (`isLog:
+  // true`) in the same `figs` array as real plots, so the gallery/review
+  // rendering, attempt bookkeeping and re-run handling all work unchanged —
+  // only Viewer.card() needs to know the difference (see viewer.js).
+  addLog(idx, name, test, text, { isError = false } = {}) {
     if (!text) return;
     const cur = Run.currentStep && Run.currentStep.index === idx
       ? Run.currentStep
@@ -333,7 +366,7 @@ const Run = {
       Run.pendingParams = null;
       Run.groups.push(Run.activeGroup);
     }
-    Run.activeGroup.figs.push({ isLog: true, text, caption: '' });
+    Run.activeGroup.figs.push({ isLog: true, isError, text, caption: '' });
     Run.renderGallery();
     if (Review.active && Review.key === cur.key) Review.renderPlots();
   },
@@ -484,15 +517,16 @@ const Run = {
     // A split QC step pauses per test, so the test is the headline and the
     // step it belongs to is the context.
     document.getElementById('run-pause-name').textContent = test || name;
-    document.getElementById('run-pause-sub').textContent = test
-      ? `Paused after ${name} — step ${idx + 1}`
-      : `Paused after step ${idx + 1}`;
+    document.getElementById('run-pause-sub').textContent = Run.pauseFailed
+      ? (test ? `${name} — step ${idx + 1} failed` : `Step ${idx + 1} failed`)
+      : (test ? `Paused after ${name} — step ${idx + 1}` : `Paused after step ${idx + 1}`);
+    document.getElementById('run-pause').classList.toggle('run-pause-failed', Run.pauseFailed);
     const rerunBtn = document.getElementById('btn-rerun');
     rerunBtn.lastChild.textContent = test ? 'Re-run test' : 'Re-run step';
     rerunBtn.title = test
       ? 'Re-run just this QC test with the parameters in the builder'
       : 'Re-run just this step with the parameters in the builder';
-    Run.setStatus('paused', 'running');
+    Run.setStatus(Run.pauseFailed ? 'step failed' : 'paused', Run.pauseFailed ? 'err' : 'running');
     Run.setRunButton('paused');
     // Unlock this step (or QC test) in the builder and scroll it into view —
     // that is where its parameters are edited.
@@ -680,6 +714,7 @@ const Run = {
     Run.source.onmessage = (ev) => Run.handleLine(ev.data);
     Run.source.addEventListener('progress', (ev) => Run.handleProgress(ev.data));
     Run.source.addEventListener('end', (ev) => {
+      Run.finalizeProgress();
       const code = Number(ev.data);
       if (Run.stopping) {
         Run.setStatus('stopped', 'err');

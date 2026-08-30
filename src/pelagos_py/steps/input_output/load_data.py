@@ -97,7 +97,14 @@ class LoadOG1(BaseStep):
 
     def run(self):
         # Fail cleanly if the file is missing, rather than surfacing a wrapped
-        # xarray/netCDF4 traceback.
+        # xarray/netCDF4 traceback. An empty file_path (the shipped default
+        # config) gets its own message, since "not a file" reads like a typo
+        # rather than "you haven't set this yet".
+        if not str(self.file_path).strip():
+            self.halt(
+                "'file_path' is empty — this config does not include a data "
+                "file. Set 'file_path' to your input NetCDF file before running."
+            )
         if not Path(self.file_path).is_file():
             self.halt(
                 f"Could not find data file '{self.file_path}'. "

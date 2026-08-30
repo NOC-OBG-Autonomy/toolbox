@@ -252,13 +252,12 @@ function addSection() {
   STATE.onChange();
 }
 
-// Deleting a section keeps its steps — they fall out into the pipeline at the
-// same position, as loose steps.
+// Deleting a section removes it and every step inside it.
 function removeSection(id) {
   const nodes = STATE.pipeline.nodes;
   const at = nodes.findIndex((n) => isSection(n) && n.id === id);
   if (at < 0) return;
-  nodes.splice(at, 1, ...nodes[at].steps);
+  nodes.splice(at, 1);
   renderPipeline();
   STATE.onChange();
 }
@@ -637,7 +636,7 @@ function renderSection(sec, index = 0) {
   const del = document.createElement('button');
   del.className = 'icon-btn';
   del.innerHTML = Icon.svg('close');
-  del.title = 'remove section (its steps stay in the pipeline)';
+  del.title = 'remove section and its steps';
   del.onclick = (e) => { e.stopPropagation(); removeSection(sec.id); };
   head.appendChild(del);
 

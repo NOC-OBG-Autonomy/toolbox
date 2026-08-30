@@ -137,11 +137,18 @@ function markYamlError(e) {
 }
 
 // Placeholder so the status row is never empty (e.g. before the first
-// validation completes on page load).
-function showValidating() {
+// validation completes on page load). By default a no-op once a result is
+// already showing, so ordinary typing doesn't flicker the pill every
+// keystroke -- pass force:true (e.g. right after loading a different config)
+// to replace whatever's showing immediately, so a slow validate call (the
+// file-content check can take a moment) never leaves the *previous* config's
+// result on screen looking like it belongs to the new one.
+function showValidating(force = false) {
   const statusHost = document.getElementById('validation-status');
-  if (!statusHost || statusHost.firstChild) return;
+  if (!statusHost || (statusHost.firstChild && !force)) return;
+  statusHost.innerHTML = '';
   statusHost.appendChild(statusBar('pending', 'Validating…', 'Checking the config against the step schemas'));
+  if (force) document.getElementById('validation').innerHTML = '';
 }
 
 function renderValidation(result) {
@@ -170,7 +177,11 @@ function renderValidation(result) {
 
   const n = result.issues.length;
   statusHost.appendChild(statusBar('err', `${n} issue${n === 1 ? '' : 's'}`, 'Fix before running'));
-  for (const issue of result.issues) host.appendChild(issueCard(issue));
+  // No data to work with is the most fundamental thing that can be wrong with
+  // a config, so surface it above any other issue rather than in list order.
+  const ranked = [...result.issues].sort((a, b) =>
+    (parseIssue(b.error).critical ? 1 : 0) - (parseIssue(a.error).critical ? 1 : 0));
+  for (const issue of ranked) host.appendChild(issueCard(issue));
 }
 
 // The green/red header pill at the top of the validation panel.
@@ -189,19 +200,25 @@ function statusBar(kind, title, sub) {
 function issueCard(issue) {
   const parsed = parseIssue(issue.error);
   const card = document.createElement('div');
-  card.className = 'v-issue';
-  const where = `Step ${issue.index + 1}${issue.name ? ' · ' + escapeHtml(issue.name) : ''}`;
+  card.className = 'v-issue' + (parsed.critical ? ' v-issue-critical' : '');
+  const where = issue.index == null
+    ? 'Pipeline'
+    : `Step ${issue.index + 1}${issue.name ? ' · ' + escapeHtml(issue.name) : ''}`;
+  const icon = parsed.critical ? `<span class="v-issue-icon">${Icon.svg('alert', 14)}</span>` : '';
   card.innerHTML =
-    `<div class="v-issue-head">` +
+    `<div class="v-issue-head">${icon}` +
     `<span class="v-tag v-tag-${parsed.kind}">${escapeHtml(parsed.tag)}</span>` +
     `<span class="v-where">${where}</span></div>` +
     `<div class="v-issue-body">${parsed.html}</div>`;
 
-  const item = STATE.pipeline.items[issue.index];
+  const item = issue.index == null ? null : STATE.pipeline.items[issue.index];
   if (item) {
     card.classList.add('v-clickable');
-    card.title = 'Show in YAML';
-    card.onclick = () => highlightYamlForStep(item.id);
+    card.title = 'Show in YAML and the builder';
+    card.onclick = () => {
+      highlightYamlForStep(item.id);
+      focusStepInBuilder(issue.index);
+    };
   }
   return card;
 }
@@ -212,7 +229,29 @@ function issueCard(issue) {
 function parseIssue(raw) {
   const msg = String(raw).replace(/^\[[^\]]*\]\s*/, '');
 
-  let m = msg.match(/^invalid parameter value\(s\):\s*(.+)$/s);
+  // Loading the base data is foundational -- these three get their own,
+  // more prominent card rather than the generic "Error" fallback below.
+  let m = msg.match(/^Multiple data-loading steps found:\s*(.+?)\.\s*(.*)$/s);
+  if (m) {
+    return { kind: 'load', tag: 'Multiple data sources', critical: true,
+      html: `<div class="v-msg">Only one step should load or generate the ` +
+        `pipeline's base data.</div><div class="v-detail v-muted">${escapeHtml(m[1])}</div>` };
+  }
+  m = msg.match(/^'Load OG1' has no 'file_path' set[^.]*\.\s*(.*)$/s);
+  if (m) {
+    return { kind: 'load', tag: 'No file set', critical: true,
+      html: `<div class="v-msg">This config does not include a data file.</div>` +
+        `<div class="v-detail">${escapeHtml(m[1])}</div>` };
+  }
+  m = msg.match(/^Missing variables for(?: QC test)? '([^']+)':\s*([^.]+)\.\s*(?:[^.]*\.\s*)*No data-loading step[^.]*\.\s*(.*)$/s);
+  if (m) {
+    return { kind: 'load', tag: 'No data source', critical: true,
+      html: `<div class="v-msg"><span class="v-param">${escapeHtml(m[1])}</span> needs ` +
+        `${chips(splitNames(m[2]), 'bad')}, but nothing in the pipeline loads data.</div>` +
+        `<div class="v-detail">${escapeHtml(m[3])}</div>` };
+  }
+
+  m = msg.match(/^invalid parameter value\(s\):\s*(.+)$/s);
   if (m) {
     return { kind: 'value', tag: 'Invalid value',
       html: m[1].split(';').map(formatValueSegment).join('') };

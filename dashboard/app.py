@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import codecs
 import json
+import logging
 import math
 import os
 import re
@@ -57,6 +58,17 @@ def _clean_ansi(text: str) -> str:
 import numpy as np
 import xarray as xr
 import yaml
+
+try:
+    # HDF5's C library prints its own diagnostic error stack straight to
+    # stderr (bypassing Python's try/except) whenever h5py/h5netcdf fails to
+    # open a file, e.g. a live NRT file that's still being written and is
+    # briefly truncated. That's already handled as an ordinary exception
+    # wherever we open a dataset, so silence the noisy duplicate.
+    import h5py
+    h5py._errors.silence_errors()
+except ImportError:
+    pass
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -93,6 +105,7 @@ if str(SRC_DIR) not in sys.path:
 from pelagos_py.steps import STEP_CLASSES, QC_CLASSES  # noqa: E402
 from pelagos_py.utils import parameter_spec  # noqa: E402
 from pelagos_py.utils.demo_data import DEMOS as DEMO_FILES, DEMO_DATA_DIR, MISSIONS  # noqa: E402
+from pelagos_py.utils.valid_config_check import check_pipeline_variables  # noqa: E402
 
 
 # Pipeline-level keys (the top ``pipeline:`` block) are not part of any step
@@ -106,9 +119,12 @@ PIPELINE_FIELDS = [
      "description": "Output directory for generated files (logs, reports, figures)."},
     {"name": "log_file", "type": "str", "required": False, "default": None,
      "description": "Log file name. Leave blank/null for console-only logging."},
-    {"name": "continue_on_step_fail", "type": "bool", "required": False, "default": True,
-     "description": "Skip a step that fails and continue the pipeline (logged as a "
-                     "severe warning) instead of stopping the whole run."},
+    {"name": "continue_on_step_fail", "type": "str", "options": ["auto", "true", "false"],
+     "required": False, "default": "auto",
+     "description": "What happens when a step fails. 'auto' pauses so you can fix "
+                     "its parameters and re-run it, or continue to skip it (outside "
+                     "the dashboard this behaves like 'true'). 'true' always skips "
+                     "the failed step and continues. 'false' always stops the run."},
 ]
 
 
@@ -209,6 +225,38 @@ class ValidatePayload(BaseModel):
     yaml_content: str
 
 
+# check_pipeline_variables() logs its own "Validation Failed: ..." line -- fine
+# for a real run's log file, but this endpoint fires on every keystroke and has
+# no handler of its own, so without this it falls through to Python's
+# lastResort handler and spams the server's stdout. The UI already renders the
+# same message as an issue card, so nothing is lost by not logging it here.
+_VALIDATE_LOGGER = logging.getLogger("pelagos_py.dashboard.validate")
+_VALIDATE_LOGGER.addHandler(logging.NullHandler())
+_VALIDATE_LOGGER.propagate = False
+
+
+def _locate_variable_issue(steps, message):
+    """Best-effort match of a check_pipeline_variables error back to the step
+    (or, for a QC-test-scoped message, the Apply QC step) that caused it, so
+    the UI can point at it the same way a schema issue does. Falls back to
+    ``(None, None)`` -- rendered as a pipeline-level issue -- if the message
+    can't be matched, which should not normally happen since the checker
+    always names the offending step or QC test.
+    """
+    for index, step in enumerate(steps):
+        name = step.get("name") if isinstance(step, dict) else None
+        if name and f"'{name}'" in message:
+            return index, name
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict) or step.get("name") != "Apply QC":
+            continue
+        qc_settings = (step.get("parameters") or {}).get("qc_settings") or {}
+        for qc_name in qc_settings:
+            if f"'{qc_name}'" in message:
+                return index, step.get("name")
+    return None, None
+
+
 @app.post("/api/validate")
 def validate(payload: ValidatePayload):
     """Validate a whole config using the pipeline's real ``parameter_spec``.
@@ -258,6 +306,28 @@ def validate(payload: ValidatePayload):
                 allowed_extra=getattr(cls, "framework_parameters", ()),
             )
         except ValueError as exc:
+            issues.append({"index": index, "name": name, "error": str(exc)})
+
+    # Cross-step variable dependencies (e.g. a QC test needing PROFILE_NUMBER
+    # with no "Find Profiles" step to produce it) -- the same check the
+    # pipeline itself runs before executing. Only run once every step's own
+    # parameters check out clean: with a schema issue already reported,
+    # resolving variables (which may instantiate a QC test with those bad
+    # parameters) would likely just add a confusing, duplicate second error.
+    if not issues:
+        try:
+            check_pipeline_variables(steps, _VALIDATE_LOGGER)
+        except ValueError as exc:
+            # check_pipeline_variables tags the step it was checking when it
+            # raised -- use that directly rather than the name-matching
+            # fallback, which picks the *first* step with a matching name and
+            # misattributes when the same QC test name appears in more than
+            # one "Apply QC" step.
+            index = getattr(exc, "step_index", None)
+            if index is not None:
+                name = steps[index].get("name") if isinstance(steps[index], dict) else None
+            else:
+                index, name = _locate_variable_issue(steps, str(exc))
             issues.append({"index": index, "name": name, "error": str(exc)})
 
     return {"ok": not issues, "yaml_error": None, "issues": issues}
@@ -504,6 +574,10 @@ class _Run:
         env["FORCE_COLOR"] = "1"
         env.pop("NO_COLOR", None)
         env["COLUMNS"] = "110"
+        # HDF5 file locking can transiently fail (Errno -101) when a file was
+        # just opened and closed by another process (e.g. the variable-check
+        # subprocess in valid_config_check.py) -- disable it for the run.
+        env["HDF5_USE_FILE_LOCKING"] = "FALSE"
         # Ensure the subprocess can import pelagos_py from src/.
         env["PYTHONPATH"] = os.pathsep.join(
             [str(SRC_DIR), env.get("PYTHONPATH", "")]
@@ -596,11 +670,11 @@ class _Run:
             # Escalate to SIGTERM then SIGKILL if it doesn't stop promptly.
             self.proc.send_signal(signal.SIGINT)
             try:
-                self.proc.wait(timeout=5)
+                self.proc.wait(timeout=1.5)
             except subprocess.TimeoutExpired:
                 self.proc.terminate()
                 try:
-                    self.proc.wait(timeout=3)
+                    self.proc.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     self.proc.kill()
 

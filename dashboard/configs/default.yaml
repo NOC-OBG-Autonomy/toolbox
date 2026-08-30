@@ -230,31 +230,44 @@ steps:
 # Backscatter is processed before chlorophyll because the quenching correction
 # below relies on the despiked BBP baseline.
 
+# Older Nelson NRT files carry raw beta directly under BBP700 instead of
+# BETA_BACKSCATTERING700. Normalise onto the newer name here (optional: true
+# skips silently on files that already have BETA_BACKSCATTERING700) so the rest
+# of the pipeline only ever has to deal with one name.
+  - name: Correct Values
+    parameters:
+      target_variable: BBP700
+      output_as: BETA_BACKSCATTERING700
+      optional: true
+    diagnostics: false
+
 # QC the raw beta before converting it. Backscatter cannot physically be
 # negative, but a small negative reading is just the sensor's dark-offset noise
 # in clear water, so those are only probably-bad (3); the 4 band catches values
 # far enough out to be nonsense. Note there is deliberately NO spike test here:
 # BBP spikes are individual particles/aggregates, i.e. real signal, and the
 # Isolate BBP Spikes step below separates them rather than discarding them.
-# The BBP from Beta step writes its output back over BBP700, so these flags stay
+# The BBP from Beta step writes its output to BBP700, so these flags stay
 # attached to the converted variable.
   - name: Apply QC
     parameters:
       qc_settings:
         range qc:
           variable_ranges:
-            BBP700:
+            BETA_BACKSCATTERING700:
               3: [0, 0.01, outside]     # Negative = dark-offset noise, high = suspect
               4: [-1.0e-4, 0.05, outside] # Physically absurd / sensor rail
         stuck value qc: # A frozen reading means a dead sensor
           variables:
-            BBP700: 3
+            BETA_BACKSCATTERING700: 3
     diagnostics: false
 
 # Convert the raw backscatter angle measurement (beta) into the particulate
 # backscattering coefficient BBP, using the scattering angle and chi factor.
   - name: BBP from Beta
     parameters:
+      apply_to: BETA_BACKSCATTERING700
+      output_as: BBP700
       theta: 124               # Effective optical backscatter scattering angle (degrees)
       xfactor: 1.076           # Chi factor scaling particulate scattering to total backscatter
     diagnostics: false
@@ -271,18 +284,6 @@ steps:
 # ===========================================================
 #                        OXYGEN
 # ===========================================================
-# Range test on the raw dissolved oxygen (MOLAR_DOXY, micromole/l), computed
-# on-board by the instrument: flag bad (4) outside 100-400. Kept as a sanity
-# check on the manufacturer's own value, ahead of the recomputed pipeline below.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        range qc:
-          variable_ranges:
-            MOLAR_DOXY:
-              4: [100, 400, outside]
-    diagnostics: false
-
 # Recompute MOLAR_DOXY from the raw phase rather than trust the instrument's
 # on-board value, so the pressure/salinity corrections and geometric time-shift
 # below are all applied consistently.

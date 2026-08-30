@@ -99,7 +99,7 @@ class valid_profile_qc(BaseQC):
         },
     }
     required_variables = ["PROFILE_NUMBER", "DEPTH"]
-    qc_outputs = ["PROFILE_NUMBER"]
+    qc_outputs = ["PROFILE_NUMBER_QC"]
 
     def return_qc(self):
         # Convert to polars

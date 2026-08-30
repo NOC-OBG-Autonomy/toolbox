@@ -271,18 +271,6 @@ steps:
 # ===========================================================
 #                        OXYGEN
 # ===========================================================
-# Range test on the raw dissolved oxygen (MOLAR_DOXY, micromole/l), computed
-# on-board by the instrument: flag bad (4) outside 100-400. Kept as a sanity
-# check on the manufacturer's own value, ahead of the recomputed pipeline below.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        range qc:
-          variable_ranges:
-            MOLAR_DOXY:
-              4: [100, 400, outside]
-    diagnostics: false
-
 # Recompute MOLAR_DOXY from the raw phase rather than trust the instrument's
 # on-board value, so the pressure/salinity corrections and geometric time-shift
 # below are all applied consistently.

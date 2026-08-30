@@ -221,7 +221,8 @@ const Review = {
         cell.className = 'review-thumb' + (g === current ? ' selected' : '');
         if (g.figs.length && g.figs[0].isLog) {
           const pre = document.createElement('pre');
-          pre.className = 'log-card-text log-card-text-compact';
+          pre.className = 'log-card-text log-card-text-compact' +
+            (g.figs[0].isError ? ' error-card-text' : '');
           pre.textContent = g.figs[0].text;
           cell.appendChild(pre);
         } else if (g.figs.length) {

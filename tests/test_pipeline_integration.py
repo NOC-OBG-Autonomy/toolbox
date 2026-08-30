@@ -134,10 +134,14 @@ steps:
 
   - name: "Apply QC"
     parameters:
+      # An unknown test name: skipped by pre-flight validation (Apply QC
+      # itself raises a clear error for it at run time), so this step reliably
+      # fails only once the pipeline is actually running -- exactly what these
+      # tests need to exercise continue_on_step_fail.
       qc_settings:
-        range qc:
+        nonexistent qc:
           variable_ranges:
-            BBP700:
+            PRES:
               4: [0, 10]
 
   - name: "Data Export"
@@ -174,7 +178,7 @@ def test_step_failure_stops_pipeline_when_disabled(tmp_path, synthetic_nc):
     p, output_nc = _build_failing_step_pipeline(
         tmp_path, synthetic_nc, continue_on_step_fail=False
     )
-    with pytest.raises(SystemExit):
+    with pytest.raises(RuntimeError):
         p.run()
     assert not output_nc.exists()
 

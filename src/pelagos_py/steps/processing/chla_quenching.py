@@ -126,6 +126,11 @@ class chla_quenching_correction(BaseStep, QCHandlingMixin):
         "CHLA", "CHLA_ADJUSTED", "CHLA_FLUORESCENCE", "CHLA_FLUORESCENCE_ADJUSTED",
     ]
     variable_parameters = ["bbp_var", "par_var", "apply_to"]
+    # bbp_var/par_var are only required by some methods (see the comment on
+    # required_variables above) -- excluded from the pipeline validator's
+    # generic variable_parameters check, which otherwise can't tell that apart
+    # from apply_to, which every method needs.
+    variable_parameters_optional = ("bbp_var", "par_var")
     uses_data_subset = True
 
     # methods whose correction needs the solar-elevation angle (so the per-profile

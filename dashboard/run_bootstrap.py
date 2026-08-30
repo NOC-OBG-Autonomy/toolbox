@@ -31,6 +31,15 @@ marker instead::
 
 so the dashboard can show that text where a plot would otherwise go. See
 ``_patch_diagnostics_capture``.
+
+A step that raises, with ``continue_on_step_fail: auto`` (the default), pauses
+the same way a diagnostics step does rather than being silently skipped or
+halting the run, so the user can fix its parameters and re-run it, or Continue
+to skip it::
+
+    __PELAGOS_FAIL__ <step index>\t<step name>\t<QC test or "">\t<base64 text>
+
+See ``_emit_fail`` and ``pelagos_py.pipeline.resolve_continue_on_step_fail``.
 """
 
 import base64
@@ -320,6 +329,18 @@ def _begin_diag_capture(pausable):
     _diag_capture["chunks"] = [] if pausable else None
 
 
+def _emit_fail(idx, name, test, exc):
+    """Print a ``__PELAGOS_FAIL__`` marker: the step raised and the run should
+    pause for review (``continue_on_step_fail: auto``) instead of skipping or
+    stopping outright. Same field shape as ``__PELAGOS_LOG__`` (see
+    ``_emit_diag_log``) so the dashboard can show it the same way, styled as
+    an error instead of a plain log.
+    """
+    text = f"{type(exc).__name__}: {exc}"
+    payload = base64.b64encode(text.encode()).decode()
+    print(f"__PELAGOS_FAIL__ {idx}\t{name}\t{test or ''}\t{payload}", flush=True)
+
+
 def _emit_diag_log(idx, name, test):
     """Print a ``__PELAGOS_LOG__`` marker for text captured since ``_begin_diag_capture``.
 
@@ -452,7 +473,13 @@ def main():
     config_path = sys.argv[1]
     report_present = False
     try:
-        from pelagos_py.pipeline import REPORT_STEP_NAME, SEVERE, STOP, Pipeline
+        from pelagos_py.pipeline import (
+            REPORT_STEP_NAME,
+            SEVERE,
+            STOP,
+            Pipeline,
+            resolve_continue_on_step_fail,
+        )
         from pelagos_py.utils.valid_config_check import check_pipeline_variables
 
         _patch_diagnostics_capture()
@@ -496,47 +523,72 @@ def main():
             for sub, test in _expand(step_config)
         ]
         for idx, step_config, test in units:
+            name = step_config.get("name", "")
             pausable = _pausable(step_config, test)
             # Snapshot the pre-step state only when we might re-run this step.
             # For a split QC step that is the state before *this test*, so a
-            # re-run replays one test rather than the whole batch.
+            # re-run replays one test rather than the whole batch. When there is
+            # no snapshot (a non-pausable step that goes on to fail), a re-run
+            # falls back to `pre_context` below -- the pre-step reference, not a
+            # copy, so a failure that never got to mutate the data still retries
+            # cleanly; one that did is a known, accepted gap (see CLAUDE.md).
             snapshot = _snapshot(context) if pausable else None
-            label = step_config.get("name", "") + (f"\t{test}" if test else "")
+            pre_context = context
+            label = name + (f"\t{test}" if test else "")
             # Announce the step *before* it runs so the dashboard can attribute
             # the figures it emits. The pipeline's own "Executing:" log line is
             # file-only (extra={"console": False}), so it never reaches here.
             print(f"__PELAGOS_STEP__ {idx}\t{label}", flush=True)
-            mem_label = step_config.get("name", "") + (f" · {test}" if test else "")
+            mem_label = name + (f" · {test}" if test else "")
             _mem_begin(mem_label)
             report_since = time.time()
             _begin_diag_capture(pausable)
+            failed = False
+            # Whether this unit has ever produced a usable context, across the
+            # initial attempt and any re-runs -- so Continue only logs "failed
+            # and skipped" when nothing usable exists, not when a later re-run
+            # happens to fail after an earlier attempt already succeeded (in
+            # that case `context` still holds that earlier good result).
+            has_result = False
             try:
                 context = pipeline.execute_step(step_config, context)
-            except (RuntimeError, SystemExit):
+                has_result = True
+            except (RuntimeError, SystemExit) as exc:
                 _diag_capture["chunks"] = None
                 # Mirror Pipeline.run()'s continue_on_step_fail handling, which
                 # this loop otherwise bypasses by driving execute_step() itself.
-                if not pipeline.global_parameters.get("continue_on_step_fail", True):
-                    pipeline.logger.log(
-                        STOP, "Pipeline stopped at step '%s'.", label
-                    )
+                fail_mode = resolve_continue_on_step_fail(
+                    pipeline.global_parameters.get("continue_on_step_fail", "auto")
+                )
+                if fail_mode is False:
+                    pipeline.logger.log(STOP, "Pipeline stopped at step '%s'.", label)
                     sys.exit(1)
-                # The fatal-error log from execute_step() already carries the
-                # detail; this just marks the step skipped.
-                pipeline.logger.log(SEVERE, "Step '%s' failed and was skipped.", label)
-                continue
-            _emit_diag_log(idx, step_config.get("name", ""), test)
-            _emit_mem(context)
-            # A report step drops a PDF under out_directory; surface it so the
-            # dashboard can offer to open it once the run reaches it.
-            if "report" in (step_config.get("name") or "").lower():
-                _emit_report(context, report_since - 2)
-            if not pausable:
+                if fail_mode is True:
+                    # The fatal-error log from execute_step() already carries the
+                    # detail; this just marks the step skipped.
+                    pipeline.logger.log(SEVERE, "Step '%s' failed and was skipped.", label)
+                    continue
+                # fail_mode == "auto": pause so the user can fix the step's
+                # parameters and re-run it, or accept the skip with Continue.
+                failed = True
+                _emit_fail(idx, name, test, exc)
+            if not failed:
+                _emit_diag_log(idx, name, test)
+                _emit_mem(context)
+                # A report step drops a PDF under out_directory; surface it so the
+                # dashboard can offer to open it once the run reaches it.
+                if "report" in name.lower():
+                    _emit_report(context, report_since - 2)
+            if not pausable and not failed:
                 continue
             while True:
                 print(f"__PELAGOS_PAUSE__ {idx}\t{label}", flush=True)
                 action, params = _read_command()
                 if action == "continue":
+                    if failed and not has_result:
+                        pipeline.logger.log(
+                            SEVERE, "Step '%s' failed and was skipped.", label
+                        )
                     break
                 if action == "stop":
                     print("Pipeline stopped.", flush=True)
@@ -566,9 +618,18 @@ def main():
                     )
                     # Fresh copy each re-run so repeated re-runs all start clean.
                     _mem_begin(mem_label)
-                    _begin_diag_capture(True)  # only a pausable unit can be re-run
-                    context = pipeline.execute_step(rerun_config, _snapshot(snapshot))
-                    _emit_diag_log(idx, step_config.get("name", ""), test)
+                    _begin_diag_capture(True)
+                    retry_context = _snapshot(snapshot) if snapshot is not None else pre_context
+                    try:
+                        context = pipeline.execute_step(rerun_config, retry_context)
+                    except (RuntimeError, SystemExit) as exc:
+                        _diag_capture["chunks"] = None
+                        failed = True
+                        _emit_fail(idx, name, test, exc)
+                        continue
+                    failed = False
+                    has_result = True
+                    _emit_diag_log(idx, name, test)
                     _emit_mem(context)
         pipeline._context = context
     except KeyboardInterrupt:
