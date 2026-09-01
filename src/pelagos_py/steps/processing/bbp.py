@@ -91,14 +91,26 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
                 self.data_subset[var], self.data_subset["TIME"]
             )
 
-        # Apply the correction
-        bbp_corrected = gt.flo_functions.flo_bback_total(
-            self.data_subset[self.apply_to],
+        # Apply the correction.
+        #
+        # NOTE: glidertools' flo_bback_total is deliberately NOT used here. It returns
+        # the TOTAL backscattering coefficient (particulate + seawater), because it adds
+        # the seawater backscattering term bsw/2 back in before returning. That is not
+        # what BBP700 is meant to hold: BBP is the PARTICULATE backscattering
+        # coefficient, following the BGC-Argo definition
+        #
+        #     BBP = 2 * pi * chi * (beta(theta) - beta_sw(theta))
+        #
+        # so only the seawater volume scattering function at the measurement angle is
+        # subtracted, and no seawater backscattering is added back.
+        betasw, _bsw = gt.flo_functions.flo_zhang_scatter_coeffs(
             self.data_subset["TEMP"],
             self.data_subset["PRAC_SALINITY"],
             self.theta,
             700,
-            self.xfactor,
+        )
+        bbp_corrected = (
+            self.xfactor * 2.0 * np.pi * (self.data_subset[self.apply_to] - betasw)
         )
 
         # Stitch back into the data
