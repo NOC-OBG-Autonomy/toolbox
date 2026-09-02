@@ -373,12 +373,21 @@ class ReportPDF(FPDF):
         #   title-page track map below. Spacing here is trimmed as tight as looks
         #   reasonable: a long step list (in _steps_abstract) can otherwise push
         #   the title page over onto a second page, which orphans the ToC.
+        #   Guarded by height rather than width: a non-square logo can be as wide
+        #   as it likes (bounded by logo_max_w) without shifting the page layout.
         self.ln(10)
-        logo_w = 20
+        logo_h = 20
+        logo_max_w = 60
         if os.path.exists(self.logo_path):
             try:
-                self.image(self.logo_path, x=(self.w - logo_w) / 2, w=logo_w)
-                self.ln(logo_w + 2)
+                info = self.image(
+                    self.logo_path,
+                    x=(self.w - logo_max_w) / 2,
+                    w=logo_max_w,
+                    h=logo_h,
+                    keep_aspect_ratio=True,
+                )
+                self.ln(info["rendered_height"] + 2)
             except Exception:  # noqa: BLE001 - logo is decorative, never fatal
                 self.ln(10)
         else:
