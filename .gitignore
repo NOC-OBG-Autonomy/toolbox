@@ -8,6 +8,10 @@ data/
 testing/
 /testing/
 
+# Dashboard run output (this branch has no dashboard code, but running it locally drops these here)
+dashboard/_run_figures/
+dashboard/configs/_last_run.yaml
+
 # Keep test data (these are reduced size .nc files for unit testing)
 !tests/test_data/*.nc 
 

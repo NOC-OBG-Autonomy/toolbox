@@ -17,13 +17,14 @@
 """QC test to identify impossible locations in LATITUDE and LONGITUDE variables."""
 
 #### Mandatory imports ####
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import polars as pl
 import xarray as xr
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -71,34 +72,18 @@ class impossible_location_qc(BaseQC):
 
     def plot_diagnostics(self):
         matplotlib.use("tkagg")
-        fig, axs = plt.subplots(nrows=2, figsize=(8, 6), sharex=True, dpi=200)
+        df = self.df.with_row_index()
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True)
 
         for ax, var, bounds in zip(
-            axs, ["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]
+            axes[:, 0], ["LATITUDE", "LONGITUDE"], [(-90, 90), (-180, 180)]
         ):
-            for i in range(10):
-                # Plot by flag number
-                plot_data = self.df.with_row_index().filter(pl.col(f"{var}_QC") == i)
-                if len(plot_data) == 0:
-                    continue
-
-                # Plot the data
-                ax.plot(
-                    plot_data["index"],
-                    plot_data[var],
-                    c=flag_cols[i],
-                    ls="",
-                    marker="o",
-                    label=f"{i}",
-                )
-            ax.set(
-                xlabel="Index",
-                ylabel=var,
-            )
-            ax.legend(title="Flags", loc="upper right")
+            fig_spec.flag_points(ax, df["index"], df[var], df[f"{var}_QC"])
+            ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+            fig_spec.style_axes(ax, xlabel="Index", ylabel=ylabel)
+            fig_spec.legend(ax, title="Flags")
             for bound in bounds:
                 ax.axhline(bound, ls="--", c="k")
 
-        fig.suptitle("Impossible Location Test")
-        fig.tight_layout()
+        fig_spec.finish(fig, suptitle="Impossible Location Test")
         plt.show(block=True)

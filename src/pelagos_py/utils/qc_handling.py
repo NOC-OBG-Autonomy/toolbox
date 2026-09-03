@@ -19,27 +19,75 @@
 import numpy as np
 import xarray as xr
 
+# Flags a step's calculations ignore unless ``calculation_flag_filter`` says
+# otherwise: probably-bad (3), bad (4) and missing (9). Unlike
+# ``flag_filter_settings``, these samples are still corrected, they just don't
+# inform the correction.
+DEFAULT_CALCULATION_FLAGS = [3, 4, 9]
+
 
 class QCHandlingMixin:
     def __init__(self):
-        # fetch user inputs
         qc_settings = self.parameters.get("qc_handling_settings") or {}
         self.filter_settings = qc_settings.get("flag_filter_settings") or {}
         self.behaviour = qc_settings.get("reconstruction_behaviour") or "reinsert"
+
+        calculation_flags = qc_settings.get("calculation_flag_filter")
+        self.calculation_flag_filter = (
+            list(DEFAULT_CALCULATION_FLAGS)
+            if calculation_flags is None
+            else list(calculation_flags)
+        )
 
         self.flag_mapping = {flag: flag for flag in list(range(10))}
         if user_mappings := qc_settings.get("flag_mapping"):
             self.flag_mapping.update(user_mappings)
 
-        # Validate that data exists in the processing context (logs + STOPs the
-        # pipeline if absent; see BaseStep.check_data).
+        # Logs + STOPs the pipeline if data is absent (see BaseStep.check_data).
         self.check_data()
-        self.data = self.context["data"].copy(deep=True)
+        full_data = self.context["data"]
 
-        # Pristine "before" snapshot for reconstruct_data/update_qc. Those only
-        # read back the filter_settings variables (and their _QC), so copy just
-        # those rather than the whole dataset. Steps needing a broader snapshot
-        # (e.g. Salinity/Chla diagnostics) replace this in their own run().
+        if getattr(self, "uses_data_subset", False):
+            # Opt-in: deep-copying the whole dataset is wasteful when a step only
+            # reads required_variables/provided_variables/optional_variables (the
+            # last for anything read conditionally, e.g. diagnostics-only vars),
+            # their _QC companions, and whatever the config's flag_filter_settings
+            # names. Steps write back via ``self.context["data"].update(self.data)``
+            # so nothing outside the subset is ever dropped. Not yet the default:
+            # steps declaring param-driven variable names (e.g. ``self.apply_to``)
+            # need auditing before they can safely opt in.
+            subset_names = set(getattr(self, "required_variables", []))
+            subset_names.update(getattr(self, "provided_variables", []))
+            subset_names.update(getattr(self, "optional_variables", []))
+            # variable_parameters: names of *parameters* (already resolved onto
+            # self, see BaseStep.__init__) whose value is itself a variable name
+            # (or list of them), e.g. par_var="DOWNWELLING_PAR". Config-driven, so
+            # can't be listed statically like optional_variables.
+            for attr in getattr(self, "variable_parameters", []):
+                value = getattr(self, attr, None)
+                if value is None:
+                    continue
+                values = [value] if isinstance(value, str) else value
+                subset_names.update(values)
+                # Several steps use the OG1 "prefer an existing _ADJUSTED variant"
+                # convention (e.g. apply_to="CHLA" but CHLA_ADJUSTED is read/used if
+                # present). Harmless to include speculatively: filtered out below if
+                # it doesn't exist in the full dataset.
+                subset_names.update(f"{v}_ADJUSTED" for v in values)
+            subset_names.update(f"{var}_QC" for var in list(subset_names))
+            subset_names.update(
+                name
+                for var in self.filter_settings
+                for name in (var, f"{var}_QC")
+            )
+            subset_vars = [name for name in subset_names if name in full_data.variables]
+            self.data = full_data[subset_vars].copy(deep=True)
+        else:
+            self.data = full_data.copy(deep=True)
+
+        # "Before" snapshot for reconstruct_data/update_qc, which only read back
+        # the filter_settings variables (and their _QC). Steps needing a broader
+        # snapshot (e.g. Salinity/Chla diagnostics) replace this in their run().
         snapshot_vars = [
             name
             for var in self.filter_settings
@@ -48,7 +96,7 @@ class QCHandlingMixin:
         ]
         self.data_copy = self.data[snapshot_vars].copy(deep=True)
 
-        # Check that the variables are present for filter execusion
+        # Drop filter_settings variables whose data or _QC is missing.
         missing_variables = []
         for var in self.filter_settings:
             if var not in self.data or f"{var}_QC" not in self.data:
@@ -59,7 +107,6 @@ class QCHandlingMixin:
         for missing in missing_variables:
             self.filter_settings.pop(missing)
 
-        # Continue method resolution order
         super().__init__()
 
     def print_qc_settings(self):
@@ -72,15 +119,51 @@ class QCHandlingMixin:
         )
 
     def filter_qc(self):
-        """
-        NaN-out data based on bad QC flags
-        """
+        """NaN-out data based on bad QC flags."""
         for var, flags_to_nan in self.filter_settings.items():
-            # find all positions where bad flags are present
             mask = ~self.data[f"{var}_QC"].isin(flags_to_nan)
-
-            # nan-out the bad flagged data
             self.data[var] = self.data[var].where(mask, np.nan)
+
+    def calculation_mask(self, variables):
+        """
+        Boolean mask over N_MEASUREMENTS of the samples a step may compute from.
+
+        True only where *every* listed variable carries a flag outside
+        ``calculation_flag_filter``. Unlike :meth:`filter_qc` this doesn't touch
+        ``self.data``, so excluded samples are still corrected, they just don't
+        inform the correction. A variable with no ``_QC`` contributes nothing.
+
+        parameters
+        ----------
+        variables : list of str
+            Variables whose flags gate the calculation.
+        """
+        mask = np.ones(self.data.sizes["N_MEASUREMENTS"], dtype=bool)
+        if not self.calculation_flag_filter:
+            return mask
+
+        ungated = []
+        for var in variables:
+            if f"{var}_QC" not in self.data:
+                ungated.append(var)
+                continue
+            mask &= ~np.isin(self.data[f"{var}_QC"].values, self.calculation_flag_filter)
+
+        if ungated:
+            self.log(
+                f"No QC found for {ungated}; their values cannot be excluded from "
+                "this step's calculations."
+            )
+        n_excluded = int((~mask).sum())
+        if n_excluded:
+            # Off the console, where it would repeat once per variable-set.
+            self.log(
+                f"Excluding {n_excluded} of {mask.size} samples flagged "
+                f"{self.calculation_flag_filter} in {list(variables)} from this "
+                "step's calculations (they are still corrected).",
+                console=False,
+            )
+        return mask
 
     def reconstruct_data(self):
         """
@@ -96,30 +179,23 @@ class QCHandlingMixin:
 
         elif self.behaviour == "reinsert":
             for var, flags_to_nan in self.filter_settings.items():
-                # Find all of the postitions where there was bad data
                 mask = self.data[f"{var}_QC"].isin(flags_to_nan)
-
-                # Where there was a bad flag, reinsert the original values back into the data
                 self.data[var] = xr.where(mask, self.data_copy[var], self.data[var])
 
         else:
             raise KeyError(f"Behaviour '{self.behaviour}' is not recgnised.")
 
     def update_qc(self):
-        """
-        Update QC flags based on changes in data values
-        """
+        """Update QC flags based on changes in data values."""
         for var in self.filter_settings.keys():
-            # Find all values that haven't changed during processing
             is_same = self.data[var] == self.data_copy[var]
             both_nan = np.logical_and(
                 self.data[var].isnull(), self.data_copy[var].isnull()
             )  # required because nan == nan is False
             mask = is_same | both_nan
 
-            # Remap flags per flag_mapping. Flags with no remap rule (incl. NaN)
-            # pass through unchanged. Done with xr.where rather than a vectorized
-            # dict lookup so NaN flags survive (and the dtype is preserved).
+            # Remap per flag_mapping; unmapped flags (incl. NaN) pass through.
+            # xr.where rather than a dict lookup so NaN flags and dtype survive.
             updated_flags = self.data[f"{var}_QC"].copy()
             for old_flag, new_flag in self.flag_mapping.items():
                 if old_flag == new_flag:
@@ -128,7 +204,7 @@ class QCHandlingMixin:
                     self.data[f"{var}_QC"] == old_flag, new_flag, updated_flags
                 )
 
-            # Where data has changed, replace the old flag with the updated flag
+            # Where data has changed, apply the updated flag.
             self.data[f"{var}_QC"] = xr.where(
                 mask, self.data_copy[f"{var}_QC"], updated_flags
             )
@@ -140,9 +216,8 @@ class QCHandlingMixin:
         parameters
         ----------
         qc_constituents : dict
-            A dictionary mapping child QC variable names to lists of parent QC variable names.
+            Maps child QC variable names to lists of parent QC variable names.
         """
-        # Unpack the parent qc
         for qc_child, qc_parents in qc_constituents.items():
             # Check the child exists
             if qc_child[:-3] not in self.data:
@@ -158,12 +233,11 @@ class QCHandlingMixin:
                 )
                 continue
 
-            # Assign the child the first parents QC
+            # Assign the child the first parent's QC, then upgrade per parent.
             self.data[qc_child] = self.data[qc_parents[0]].copy(deep=True)
 
-            # If there is more than 1 parent, then itteratively upgrade the QC
             if len(qc_parents) > 1:
-                # Define a combinatrix for flag upgrading priority
+                # Combinatrix defining flag-upgrade priority.
                 qc_combinatrix = np.array(
                     [
                         [0, 0, 0, 3, 4, 0, 0, 0, 0, 9],
@@ -188,7 +262,7 @@ class QCHandlingMixin:
             is_nan = np.isnan(self.data[f"{qc_child[:-3]}"])
             self.data[f"{qc_child}"] = xr.where(is_nan, 9, self.data[f"{qc_child}"])
 
-        # Check for any new columns that are missing QC
+        # Assign unchecked QC to any new variables that still lack it.
         all_var_names = {
             var
             for var in self.data.data_vars

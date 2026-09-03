@@ -71,9 +71,12 @@ class BaseQC:
     qc_outputs = []
 
     def __init__(self, data, **kwargs):
-        # data may be None when a test is instantiated  to
-        # introspect its required/provided variables from its parameters.
-        self.data = data.copy(deep=True) if data is not None else None
+        # data may be None when a test is instantiated to introspect its
+        # required/provided variables from its parameters.
+        # Shallow copy: a new Dataset container per test (cheap - no array copy)
+        # so a test adding *_QC variables can't leak them into other tests sharing
+        # the same underlying data. Deep copy was the main QC RAM ratchet.
+        self.data = data.copy(deep=False) if data is not None else None
 
         # Connect to the main pipeline logging hierarchy
         self.logger = logging.getLogger(f"pelagos_py.pipeline.qc.{self.qc_name.replace(' ', '_')}")
@@ -96,13 +99,27 @@ class BaseQC:
         """
         return parameter_spec.describe(cls.parameter_schema or {})
 
-    def log(self, message):
-        """Log an info-level message with the QC name prefix."""
-        self.logger.info("[%s] %s", self.qc_name, message)
+    def log(self, message, console=True):
+        """Log an info-level message with the QC name prefix. ``console=False`` keeps it in the log file only."""
+        self.logger.info("[%s] %s", self.qc_name, message, extra={"console": console})
 
     def log_warn(self, message):
         """Log a warning-level message with the QC name prefix."""
         self.logger.warning("[%s] %s", self.qc_name, message)
+
+    def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
+        """Wrap a countable loop as a standard pipeline progress bar (see :meth:`BaseStep.log_progress`)."""
+        from pelagos_py.utils.console import progress_bar
+
+        return progress_bar(
+            iterable,
+            desc=desc,
+            total=total,
+            unit=unit,
+            leave=leave,
+            logger=self.logger,
+            step_name=self.qc_name,
+        )
 
     def return_qc(self):
         """Representative of QC processing, to be overridden by subclasses.

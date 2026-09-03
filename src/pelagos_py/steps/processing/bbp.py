@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
 import glidertools as gt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -36,6 +37,11 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
     step_name = "BBP from Beta"
     required_variables = ["TIME", "DEPTH", "TEMP", "PRAC_SALINITY"]
     provided_variables = []
+    # PROFILE_NUMBER is read in run() (data_subset) but not declared required above
+    # (pre-existing; left as-is to avoid changing pipeline-validation behaviour).
+    optional_variables = ["PROFILE_NUMBER"]
+    variable_parameters = ["apply_to", "output_as"]
+    uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
@@ -85,11 +91,8 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
             ["TIME", "PROFILE_NUMBER", "DEPTH", "TEMP", "PRAC_SALINITY", self.apply_to]
         ]
 
-        # Interp DEPTH, TEMP and PRAC_SALINITY
-        for var in ["DEPTH", "TEMP", "PRAC_SALINITY"]:
-            self.data_subset[var][:] = interpolate_nans(
-                self.data_subset[var], self.data_subset["TIME"]
-            )
+        # Gaps in TEMP/PRAC_SALINITY are left as NaN: BBP is not derived there and is
+        # flagged missing (9) below. Add an Interpolate Data step first for gap-free BBP.
 
         # Apply the correction
         bbp_corrected = gt.flo_functions.flo_bback_total(
@@ -103,6 +106,9 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
 
         # Stitch back into the data
         self.data[self.output_as] = bbp_corrected
+        self.data[self.output_as].attrs["units"] = "m-1"
+        self.data[self.output_as].attrs["long_name"] = "Total particulate backscatter"
+        self.data[self.output_as].attrs["standard_name"] = self.output_as
 
         self.reconstruct_data()
         self.update_qc()
@@ -118,7 +124,7 @@ class BBPFromBeta(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def generate_diagnostics(self):
@@ -149,6 +155,8 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
     step_name = "Isolate BBP Spikes"
     required_variables = ["TIME"]
     provided_variables = []
+    variable_parameters = ["apply_to"]
+    uses_data_subset = True
 
     parameter_schema = {
         "apply_to": {
@@ -187,8 +195,15 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
         """
         self.filter_qc()
 
+        # Flagged samples are left out of the despike so they cannot drag their
+        # neighbours' rolling baseline; they get no baseline and are flagged missing (9)
+        # below. Add an Interpolate Data step first for a gap-free baseline.
+        usable = self.data[self.apply_to].where(
+            self.calculation_mask([self.apply_to])
+        )
+
         self.baseline, self.spikes = gt.cleaning.despike(
-            self.data[self.apply_to], self.window_size, spike_method=self.method
+            usable, self.window_size, spike_method=self.method
         )
 
         self.data[f"{self.apply_to}_BASELINE"] = self.baseline
@@ -208,52 +223,34 @@ class IsolateBBPSpikes(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def generate_diagnostics(self):
         mpl.use("tkagg")
 
         raw = self.data[self.apply_to]
+        time = self.data["TIME"]
 
-        # Plot
-        fig, axs = plt.subplots(
-            nrows=2, figsize=(10, 6), height_ratios=(2, 1), sharex=True
-        )
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True, height_ratios=(2, 1))
+        ax1, ax2 = axes[0][0], axes[1][0]
 
-        # Plot original and baseline time series
-        axs[0].plot(
-            self.data["TIME"][~np.isnan(raw)],
-            raw[~np.isnan(raw)],
-            ls="--",
-            c="gray",
-            label="Raw",
-        )
-        axs[0].plot(
-            self.data["TIME"][~np.isnan(self.baseline)],
-            self.baseline[~np.isnan(self.baseline)],
-            c="b",
-            alpha=0.5,
-            label="Baseline",
-        )
+        # Panel 1: raw and baseline time series.
+        ax1.plot(time[~np.isnan(raw)], raw[~np.isnan(raw)],
+                 ls="--", color=fig_spec.FLAGGED, label="Raw")
+        ax1.plot(time[~np.isnan(self.baseline)], self.baseline[~np.isnan(self.baseline)],
+                 color=fig_spec.CATEGORY[1], alpha=fig_spec.ALPHA, label="Baseline")
 
-        # Plot spike points
-        axs[1].plot(
-            self.data["TIME"][~np.isnan(self.spikes)],
-            self.spikes[~np.isnan(self.spikes)],
-            marker="o",
-            c="r",
-            label="Spikes",
-        )
+        # Panel 2: isolated spike points.
+        fig_spec.points(ax2, time[~np.isnan(self.spikes)], self.spikes[~np.isnan(self.spikes)],
+                        color=fig_spec.CATEGORY[2], label="Spikes")
 
-        for ax in axs:
-            ax.legend(loc="upper right")
+        ylabel = fig_spec.axis_label(self.apply_to, self.data[self.apply_to].attrs.get("units"))
+        for ax in (ax1, ax2):
+            fig_spec.date_axis(ax, which="x")
+            fig_spec.legend(ax)
+        fig_spec.style_axes(ax1, ylabel=ylabel)
+        fig_spec.style_axes(ax2, xlabel="Time", ylabel=ylabel)
 
-        ax.set(
-            xlabel="Time",
-            ylabel=self.apply_to,
-            title=f"{self.apply_to}: Baseline Timeseries & Spikes",
-        )
-
-        fig.tight_layout()
+        fig_spec.finish(fig, suptitle=f"{self.apply_to}: Baseline Timeseries & Spikes")
         plt.show(block=True)

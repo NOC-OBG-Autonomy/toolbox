@@ -20,13 +20,12 @@
 from pelagos_py.steps.base_step import BaseStep, register_step
 from pelagos_py.utils.qc_handling import QCHandlingMixin
 import pelagos_py.utils.diagnostics as diag
+from pelagos_py.utils.processing_utils import cndc_scale_factor
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
-import matplotlib.lines as mlines
 import matplotlib as mpl
 from scipy import interpolate
-from tqdm import tqdm
 import xarray as xr
 import pandas as pd
 import numpy as np
@@ -91,6 +90,9 @@ def compute_optimal_lag(
     t0 = profile_data[time_col].values[0]
     profile_data["ELAPSED_TIME[s]"] = (profile_data[time_col] - t0).dt.total_seconds()
 
+    # gsw wants conductivity in mS/cm; scale from the units attribute (S/m assumed if unset)
+    cndc_factor = cndc_scale_factor(profile_data["CNDC"].attrs.get("units"))
+
     # Creates a callable function that predicts what CNDC would be at any given time
     conductivity_from_time = interpolate.interp1d(
         profile_data["ELAPSED_TIME[s]"].values,
@@ -110,16 +112,11 @@ def compute_optimal_lag(
             profile_data["ELAPSED_TIME[s]"] + lag
         )
 
-        # Scale if necessary (handles conductivity supplied in S/m rather than mS/cm)
-        cndc_scaled = (
-            time_shifted_conductivity * 10
-            if np.nanmax(time_shifted_conductivity) < 10
-            else time_shifted_conductivity
-        )
-
         # Derive salinity with the time shifted CNDC (spiking will be minimized when CNDC and TEMP are aligned)
         PSAL = gsw.conversions.SP_from_C(
-            cndc_scaled, profile_data["TEMP"], profile_data["PRES"]
+            time_shifted_conductivity * cndc_factor,
+            profile_data["TEMP"],
+            profile_data["PRES"],
         )
 
         # Smooth the salinity profile (to remove spiking)
@@ -184,6 +181,10 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
     Woo (2019); unpumped CTDs would require the flow rate to be derived from the
     glider's velocity through the water (e.g. from pitch or a flight model).
 
+    Samples flagged in ``calculation_flag_filter`` (by default probably-bad (3),
+    bad (4), missing (9)) neither inform the lag estimate nor anchor the correction
+    interpolants, but both corrections are still evaluated at every sample.
+
     Parameters
     ----------
     filter_window_size : int, optional
@@ -218,6 +219,10 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
     step_name = "Salinity Adjustment"
     required_variables = ["TIME", "PROFILE_NUMBER", "CNDC", "TEMP", "PRES"]
     provided_variables = []
+    # Read only if present: TIME_CTD is an optional fallback for TIME (see run());
+    # PROFILE_DIRECTION/DEPTH are only used to build the diagnostics QC mask.
+    optional_variables = ["TIME_CTD", "PROFILE_DIRECTION", "DEPTH"]
+    uses_data_subset = True
 
     parameter_schema = {
         "filter_window_size": {
@@ -243,6 +248,12 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         # Filter user-specified flags
         self.filter_qc()
 
+        # Per-input usable masks: flagged samples anchor no interpolant and inform no
+        # lag estimate; the combined mask drops a sample if any one input is flagged.
+        self._usable_ct = self.calculation_mask(["CNDC", "TEMP", "PRES"])
+        self._usable_cndc = self.calculation_mask(["CNDC"])
+        self._usable_temp = self.calculation_mask(["TEMP"])
+
         # Correct conductivity-temperature response time misalignment (C-T Lag)
         self.correct_ct_lag()
 
@@ -255,7 +266,9 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         if self.diagnostics:
             self.generate_diagnostics()
 
-        self.context["data"] = self.data
+        # self.data is a subset of context["data"] (see QCHandlingMixin); merge
+        # rather than replace so variables outside the subset aren't dropped.
+        self.context["data"].update(self.data)
         return self.context
 
     def correct_ct_lag(self):
@@ -311,12 +324,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         qualifying = (durations >= pd.Timedelta(hours=1)) & (counts > 3 * filter_size)
         n_to_process = min(max_profiles, int(qualifying.sum()))
 
-        pbar = tqdm(
-            total=n_to_process,
-            colour="green",
-            desc="\033[97mCT Lag Progress\033[0m",
-            unit="prof",
-        )
+        pbar = self.log_progress(total=n_to_process, desc="CT Lag", unit="prof")
 
         # Loop through all good profiles and store the optimal C-T lag for each.
         for i in indices:
@@ -330,6 +338,19 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
                 continue
 
             profile = self.data.isel(N_MEASUREMENTS=prof_indices)
+
+            # NaN out flagged samples so they do not affect the lag estimate
+            usable = self._usable_ct[prof_indices]
+            profile = profile.assign(
+                **{
+                    var: (
+                        profile[var].dims,
+                        np.where(usable, profile[var].values, np.nan),
+                    )
+                    for var in ("CNDC", "TEMP", "PRES")
+                }
+            )
+
             valid_times = profile[self.time_col].dropna(dim="N_MEASUREMENTS")
 
             if len(valid_times) > 0:
@@ -373,9 +394,18 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             data_subset[self.time_col] - t0
         ).dt.total_seconds()
 
+        # Only usable samples anchor the interpolant; it is still evaluated everywhere
+        anchors = self._usable_cndc[np.where(valid_data_mask)[0]]
+        if anchors.sum() < 2:
+            self.log(
+                "Fewer than two usable CNDC samples for the CT lag shift "
+                f"(flags {self.calculation_flag_filter} excluded). Skipping."
+            )
+            return
+
         CNDC_from_TIME = interpolate.interp1d(
-            data_subset["ELAPSED_TIME[s]"].values,
-            data_subset["CNDC"].values,
+            data_subset["ELAPSED_TIME[s]"].values[anchors],
+            data_subset["CNDC"].values[anchors],
             bounds_error=False,
         )
         shifted_time = data_subset["ELAPSED_TIME[s]"].values + self.ct_lag_median
@@ -406,6 +436,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         Operates in place on ``self.data``.
         """
         corrected_temp_array = np.full(len(self.data["TEMP"]), np.nan)
+        prof_arr = self.data["PROFILE_NUMBER"].values
         profile_numbers = np.unique(
             self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS").values
         )
@@ -413,20 +444,27 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         self.filter_params = {}
         self._thermal_scatter_data = None
 
-        for prof in tqdm(
-            profile_numbers,
-            colour="blue",
-            desc="\033[97mThermal Lag Progress\033[0m",
-            unit="prof",
-        ):
+        for prof in self.log_progress(profile_numbers, desc="Thermal Lag", unit="prof"):
 
-            mask = self.data["PROFILE_NUMBER"] == prof
-            nan_mask = self.data["TEMP"].isnull() | ~mask
-            data_subset = self.data[[self.time_col, "TEMP", "PRES"]].where(
-                ~nan_mask, drop=True
+            # Restrict to this profile's rows first (like correct_ct_lag above),
+            # so the NaN-mask/where below runs on a per-profile slice instead of
+            # rebuilding a full-dataset-sized copy on every iteration.
+            prof_indices = np.where(prof_arr == prof)[0]
+            if len(prof_indices) == 0:
+                continue
+            profile = self.data[[self.time_col, "TEMP", "PRES"]].isel(
+                N_MEASUREMENTS=prof_indices
             )
+            nan_mask = profile["TEMP"].isnull()
+            data_subset = profile.where(~nan_mask, drop=True)
+            indices = prof_indices[~nan_mask.values]
 
             if len(data_subset[self.time_col]) < 5:
+                continue
+
+            # Only usable samples anchor the interpolant; every sample is still corrected
+            anchors = self._usable_temp[indices]
+            if anchors.sum() < 2:
                 continue
 
             # Find the elapsed time in seconds
@@ -437,8 +475,8 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
             # Define a function that can estimate TEMP at any time point
             TEMP_from_TIME = interpolate.interp1d(
-                data_subset["ELAPSED_TIME[s]"],
-                data_subset["TEMP"],
+                data_subset["ELAPSED_TIME[s]"].values[anchors],
+                data_subset["TEMP"].values[anchors],
                 bounds_error=False,
                 fill_value="extrapolate",
             )
@@ -493,7 +531,6 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
             )
 
             # Store adjusted data
-            indices = np.where(~nan_mask)[0]
             corrected_temp_array[indices] = data_subset["TEMP"].values
 
             if (
@@ -514,10 +551,7 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         self.data["TEMP"][:] = final_temp
 
     def generate_diagnostics(self):
-        """
-        Displays a comprehensive diagnostics dashboard detailing applied adjustments
-        to conductivity and temperature, along with overall impacts on the dataset.
-        """
+        # Dashboard of applied CNDC/TEMP adjustments and their dataset-wide impact
         mpl.use("tkagg")
 
         # --- Friendly Configuration Variables ---
@@ -525,8 +559,6 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         DPI = 120
 
         # Colours
-        COLOUR_CORR_T = "darkred"
-        COLOUR_CORR_C = "darkblue"
         COLOUR_BEST = "darkorange"
         COLOUR_SMOOTH = "dimgrey"
         COLOUR_SCATTER = "tab:purple"
@@ -646,153 +678,95 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
                 bbox=dict(boxstyle="round", facecolor="white", alpha=0.8, edgecolor="#ccc"),
             )
 
-        # (4) Row 2, Col 2: Combined Salinity Profiles
-        mask_range = self.data_copy["PROFILE_NUMBER"].isin(processed_profs)
-        uncorr = self.data_copy.where(mask_range & plot_qc_mask, drop=True)
-        corr = self.data.where(mask_range & plot_qc_mask, drop=True)
+        # (4)+(5) Row 2, Col 2-3: up/down-cast salinity, raw (left, all samples) vs
+        # QC-clean + adjusted (right). ~20 mid-mission profiles sharing one sal/pres range.
+        COLOUR_DOWN = "grey"
+        COLOUR_UP = "tab:blue"
 
-        if len(uncorr["DEPTH"].dropna(dim="N_MEASUREMENTS")) > 0:
-            c_raw = uncorr["CNDC"].values
-            c_new = corr["CNDC"].values
-            c_raw = c_raw * 10 if np.nanmax(c_raw) < 10 else c_raw
-            c_new = c_new * 10 if np.nanmax(c_new) < 10 else c_new
+        def psal_from(ds):
+            c = ds["CNDC"].values * cndc_scale_factor(ds["CNDC"].attrs.get("units"))
+            return gsw.conversions.SP_from_C(c, ds["TEMP"].values, ds["PRES"].values)
 
-            p_raw = gsw.conversions.SP_from_C(
-                c_raw, uncorr["TEMP"].values, uncorr["PRES"].values
-            )
-            p_new = gsw.conversions.SP_from_C(
-                c_new, corr["TEMP"].values, uncorr["PRES"].values
-            )
+        has_direction = "PROFILE_DIRECTION" in self.data
+        if len(unique_profs) > 0 and has_direction:
+            # Contiguous ~20-profile block from the middle of the deployment
+            p1 = int(np.nanmedian(unique_profs))
+            p2 = p1 + int(min(len(unique_profs) / 2, 20))
+            in_subset = (prof_arr > p1) & (prof_arr < p2)
+            subset_mask = in_subset & plot_qc_mask.values
 
-            ax_sal.plot(
-                p_raw,
-                uncorr["DEPTH"].values,
-                c="grey",
-                ls="",
-                marker=".",
-                ms=1,
-                alpha=0.3,
-                label="Raw",
-            )
+            dir_arr = self.data["PROFILE_DIRECTION"].values
+            pres = self.data_copy["PRES"].values
+            psal_raw = psal_from(self.data_copy)
+            psal_corr = psal_from(self.data)
 
-            sal_legend = [
-                mlines.Line2D(
-                    [], [], color="grey", marker=".", ls="", markersize=4, label="Raw (All)"
-                )
-            ]
-
-            ax_sal.plot(
-                p_new,
-                uncorr["DEPTH"].values,
-                c=COLOUR_COMBINED,
-                ls="",
-                marker=".",
-                ms=1.5,
-                alpha=0.7,
-            )
-            sal_legend.append(
-                mlines.Line2D(
-                    [],
-                    [],
-                    color=COLOUR_COMBINED,
-                    marker=".",
-                    ls="",
-                    markersize=4,
-                    label="Corr Combined",
-                )
+            # Log sample counts and depth/salinity scales so a small correction on a
+            # deep axis stays diagnosable
+            _sub = subset_mask & np.isin(dir_arr, [1.0, -1.0])
+            _dsal = np.abs(psal_corr[_sub] - psal_raw[_sub])
+            _p = pres[_sub][np.isfinite(pres[_sub])]
+            _sr = psal_raw[_sub]
+            _dropped = int((in_subset & ~plot_qc_mask.values & np.isfinite(psal_raw)).sum())
+            self.log(
+                f"Salinity profile panels: {int(_sub.sum())} samples shown, "
+                f"{_dropped} hidden by QC flags (3/4/9); "
+                f"PRES {np.nanmin(_p):.0f}-{np.nanmax(_p):.0f} dbar; "
+                f"raw PSAL spread {np.nanmax(_sr) - np.nanmin(_sr):.3f}; "
+                f"correction |Δpsal| median {np.nanmedian(_dsal):.4f}, "
+                f"max {np.nanmax(_dsal):.4f}"
             )
 
-            ax_sal.set_title("Combined Result", fontsize=TITLE_SIZE)
-            ax_sal.set_xlabel("Practical Salinity", fontsize=LABEL_SIZE)
-            ax_sal.set_ylabel("Depth (m)", fontsize=LABEL_SIZE)
-            ax_sal.tick_params(axis="both", labelsize=LABEL_SIZE)
+            def draw_profiles(ax, psal, mask, title):
+                for direction, colour, lbl in (
+                    (1.0, COLOUR_DOWN, "Downcast"),
+                    (-1.0, COLOUR_UP, "Upcast"),
+                ):
+                    sel = mask & (dir_arr == direction)
+                    first = True
+                    for pn in np.unique(prof_arr[sel]):
+                        idx = np.where(sel & (prof_arr == pn))[0]
+                        if len(idx) == 0:
+                            continue
+                        # Drop NaN samples so points connect into a profile line
+                        x = psal[idx]
+                        y = pres[idx]
+                        finite = np.isfinite(x) & np.isfinite(y)
+                        if not finite.any():
+                            continue
+                        ax.plot(
+                            x[finite],
+                            y[finite],
+                            color=colour,
+                            lw=0.7,
+                            alpha=0.7,
+                            label=lbl if first else None,
+                        )
+                        first = False
+                ax.set_title(title, fontsize=TITLE_SIZE)
+                ax.set_xlabel("Practical Salinity", fontsize=LABEL_SIZE)
+                ax.tick_params(axis="both", labelsize=LABEL_SIZE)
+                ax.grid(True, alpha=0.2)
+                ax.legend(fontsize=7, loc="lower right")
 
-            y_min, y_max = ax_sal.get_ylim()
-            if abs(y_max) < abs(y_min):
-                ax_sal.set_ylim(y_min, y_max)
-            else:
-                ax_sal.set_ylim(y_max, y_min)
+            draw_profiles(ax_sal, psal_raw, in_subset, "Raw salinity")
+            draw_profiles(ax_diff, psal_corr, subset_mask, "QC + adjusted")
+            ax_sal.set_ylabel("Pressure (dbar)", fontsize=LABEL_SIZE)
 
-            ax_sal.grid(True, alpha=0.2)
-            ax_sal.legend(handles=sal_legend, fontsize=7, loc="lower right")
-
-        # (5) Row 2, Col 3: Dataset Adjustments Diff Plot
-        t_all = self.data_copy[self.time_col].values
-
-        valid_t = (
-            ~np.isnat(t_all)
-            & ~np.isnan(self.data_copy["TEMP"].values)
-            & ~np.isnan(self.data_copy["CNDC"].values)
-            & plot_qc_mask.values
-        )
-        sub_step = max(1, np.sum(valid_t) // 50000)
-
-        t_valid = t_all[valid_t][::sub_step]
-        if len(t_valid) > 0:
-            elapsed_days = (t_valid - t_valid[0]) / np.timedelta64(1, "D")
-
-            temp_raw_all = self.data_copy["TEMP"].values[valid_t][::sub_step]
-            temp_corr_all = self.data["TEMP"].values[valid_t][::sub_step]
-            cndc_raw_all = self.data_copy["CNDC"].values[valid_t][::sub_step]
-            cndc_corr_all = self.data["CNDC"].values[valid_t][::sub_step]
-
-            cndc_raw_all = cndc_raw_all * 10 if np.nanmax(cndc_raw_all) < 10 else cndc_raw_all
-            cndc_corr_all = (
-                cndc_corr_all * 10 if np.nanmax(cndc_corr_all) < 10 else cndc_corr_all
-            )
-
-            temp_diff = temp_corr_all - temp_raw_all
-            cndc_diff = cndc_corr_all - cndc_raw_all
-
-            ax_diff_c = ax_diff.twinx()
-
-            ax_diff.plot(
-                elapsed_days,
-                temp_diff,
-                color=COLOUR_CORR_T,
-                marker=".",
-                ls="",
-                ms=1,
-                alpha=0.4,
-                label="Temp Diff",
-            )
-            ax_diff_c.plot(
-                elapsed_days,
-                cndc_diff,
-                color=COLOUR_CORR_C,
-                marker=".",
-                ls="",
-                ms=1,
-                alpha=0.4,
-                label="CNDC Diff",
-            )
-
-            ax_diff.set_xlabel("Elapsed Time (Days)", fontsize=LABEL_SIZE)
-            ax_diff.set_ylabel("Temp Difference (°C)", fontsize=LABEL_SIZE)
-            ax_diff_c.set_ylabel("CNDC Difference (mS/cm)", fontsize=LABEL_SIZE)
-            ax_diff.set_title("Dataset-Wide Adjustments (Corr - Raw)", fontsize=TITLE_SIZE)
-            ax_diff.tick_params(axis="both", labelsize=LABEL_SIZE)
-            ax_diff_c.tick_params(axis="y", labelsize=LABEL_SIZE)
-
-            # Scale both axes symmetrically about zero so the two 0-lines coincide
-            t_absmax = np.nanmax(np.abs(temp_diff))
-            c_absmax = np.nanmax(np.abs(cndc_diff))
-            if np.isfinite(t_absmax) and t_absmax > 0:
-                ax_diff.set_ylim(-t_absmax * 1.05, t_absmax * 1.05)
-            if np.isfinite(c_absmax) and c_absmax > 0:
-                ax_diff_c.set_ylim(-c_absmax * 1.05, c_absmax * 1.05)
-
-            lines1, labels1 = ax_diff.get_legend_handles_labels()
-            lines2, labels2 = ax_diff_c.get_legend_handles_labels()
-
-            leg_handles = []
-            for line in lines1 + lines2:
-                leg_handles.append(
-                    mlines.Line2D([], [], color=line.get_color(), marker=".", ls="", markersize=6)
-                )
-
-            ax_diff.legend(leg_handles, labels1 + labels2, loc="best", fontsize=7)
-            ax_diff.grid(True, alpha=0.2)
+            # Shared pressure-down ranges framed on QC-clean salinity; raw spikes clip
+            raw_sub = in_subset & np.isin(dir_arr, [1.0, -1.0])
+            clean_sal = psal_corr[subset_mask & np.isin(dir_arr, [1.0, -1.0])]
+            clean_sal = clean_sal[np.isfinite(clean_sal)]
+            if clean_sal.size:
+                s_lo, s_hi = clean_sal.min(), clean_sal.max()
+                pad = 0.02 * (s_hi - s_lo) if s_hi > s_lo else 0.02
+                for ax in (ax_sal, ax_diff):
+                    ax.set_xlim(s_lo - pad, s_hi + pad)
+            p_finite = pres[raw_sub][np.isfinite(pres[raw_sub])]
+            if len(p_finite) > 0:
+                pmin, pmax = p_finite.min(), p_finite.max()
+                ppad = 0.02 * (pmax - pmin) if pmax > pmin else 1.0
+                for ax in (ax_sal, ax_diff):
+                    ax.set_ylim(pmax + ppad, pmin - ppad)
 
         # Final Render
         fig.suptitle("Salinity Adjustment Diagnostics Dashboard", fontsize=11, fontweight="bold")

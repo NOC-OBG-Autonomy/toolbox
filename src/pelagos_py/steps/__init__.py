@@ -39,15 +39,11 @@ from pelagos_py.steps.base_qc import REGISTERED_QC
 logger = logging.getLogger("pelagos_py.pipeline.discovery")
 logger.setLevel(logging.INFO)
 if not logger.handlers:
-    logger.propagate = False  #   Avoid duplicate lines if the app configures root logging
-    _ch = logging.StreamHandler()
-    _ch.setFormatter(
-        logging.Formatter(
-            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-            "%Y-%m-%d %H:%M:%S",
-        )
-    )
-    logger.addHandler(_ch)
+    logger.propagate = False  # Avoid duplicate lines if the app configures root logging
+    # Same console handler the pipeline uses; the module scan shows a progress bar.
+    from pelagos_py.utils.console import make_console_handler
+
+    logger.addHandler(make_console_handler())
 
 # Global registries
 STEP_CLASSES = {}
@@ -61,15 +57,20 @@ def discover_steps():
     Dynamically discover and import step modules from the steps directory.
     This populates the global STEP_CLASSES and QC_CLASSES registries for use elsewhere.
     """
+    from pelagos_py.utils.console import progress_bar
+
     base_dir = pathlib.Path(__file__).parent.resolve()
-    logger.info("Scanning for step modules in %s", base_dir)
+    logger.info("Scanning for step modules in %s", base_dir, extra={"console": False})
 
     discovery_start = time.time()
     failed_modules = []
-    for py_file in base_dir.rglob("*.py"):
-        if py_file.name == "__init__.py":
-            continue
-
+    # Pre-collect module files so the scan can show a determinate progress bar.
+    module_files = [
+        py_file
+        for py_file in base_dir.rglob("*.py")
+        if py_file.name != "__init__.py"
+    ]
+    for py_file in progress_bar(module_files, desc="Discovering steps", unit="mod"):
         # Convert file path to module path
         relative_path = py_file.resolve().relative_to(base_dir)
         module_name = ".".join(
@@ -84,10 +85,17 @@ def discover_steps():
             failed_modules.append(module_name)
             continue
         elapsed = time.time() - module_start
-        logger.info("Imported step module: %s (%.2fs)", module_name, elapsed)
+        logger.info(
+            "Imported step module: %s (%.2fs)",
+            module_name,
+            elapsed,
+            extra={"console": False},
+        )
 
     logger.info(
-        "Finished importing step modules in %.2fs", time.time() - discovery_start
+        "Finished importing step modules in %.2fs",
+        time.time() - discovery_start,
+        extra={"console": False},
     )
 
     # Populate global step class map. Importing the modules above is what's
@@ -115,6 +123,16 @@ def discover_steps():
 
 # Auto-discover steps when pelagos_py.steps is imported
 discover_steps()
+
+
+def resolve_step_name(step_name):
+    """Resolve a step name to its canonical STEP_CLASSES key, case-insensitively (None if no match)."""
+    if step_name in STEP_CLASSES:
+        return step_name
+    if not isinstance(step_name, str):
+        return None
+    lowered = {name.lower(): name for name in STEP_CLASSES}
+    return lowered.get(step_name.lower())
 
 
 def create_step(step_config, context=None):
@@ -148,12 +166,15 @@ def create_step(step_config, context=None):
     if not step_name:
         raise ValueError("Step config missing required 'name' field.")
 
-    step_class = STEP_CLASSES.get(step_name)
+    canonical_name = resolve_step_name(step_name)
+    step_class = STEP_CLASSES.get(canonical_name) if canonical_name else None
     if not step_class:
         raise ValueError(
             f"Step '{step_name}' not recognized or missing @register_step. "
             f"Available: {list(STEP_CLASSES.keys())}"
         )
+    # Use the canonical name so downstream naming ignores the user's casing.
+    step_name = canonical_name
 
     # --- Instantiate the step ---
     parameters = step_config.get("parameters", {}) or {}

@@ -88,6 +88,9 @@ def _pipeline_provided_variables(steps_list):
         provided.update(getattr(step_class, "qc_outputs", []))
         provided.update(parameters.get("to_derive", []))
         provided.update(parameters.get("qc_outputs", []))
+        out = parameters.get("output_as")
+        if out:
+            provided.update(out if isinstance(out, (list, tuple)) else [out])
         if step_config["name"] == "Apply QC":
             for qc_name, qc_params in (parameters.get("qc_settings") or {}).items():
                 qc_class = QC_CLASSES.get(qc_name)
@@ -165,6 +168,20 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                     f"Invalid parameter type(s) for '{step_name}': {bad_str}."
                 )
 
+        # Check for out-of-options values (e.g. an unknown 'method' choice).
+        if schema is not None:
+            bad_options = parameter_spec.option_errors(schema, parameters)
+            if bad_options:
+                bad_str = "; ".join(bad_options)
+                logger.error(
+                    "Validation Failed: '%s' has invalid parameter value(s): %s.",
+                    step_name,
+                    bad_str,
+                )
+                raise ValueError(
+                    f"Invalid parameter value(s) for '{step_name}': {bad_str}."
+                )
+
         # Apply QC nests each test's settings under qc_settings — validate the
         # required parameters of every requested test up front. (Their variable
         # requirements are checked by Apply QC at run time, where _QC columns and
@@ -215,6 +232,19 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
                         )
                         raise ValueError(
                             f"Invalid parameter type(s) for QC test '{qc_name}': {bad_str}."
+                        )
+
+                if qc_schema is not None:
+                    qc_bad_options = parameter_spec.option_errors(qc_schema, qc_params or {})
+                    if qc_bad_options:
+                        bad_str = "; ".join(qc_bad_options)
+                        logger.error(
+                            "Validation Failed: QC test '%s' has invalid parameter value(s): %s.",
+                            qc_name,
+                            bad_str,
+                        )
+                        raise ValueError(
+                            f"Invalid parameter value(s) for QC test '{qc_name}': {bad_str}."
                         )
 
                 # Resolve this test's variable requirements the same way Apply QC
@@ -279,6 +309,9 @@ def check_pipeline_variables(steps_list, logger, available_vars=None):
         available_vars.update(provided_vars)
         available_vars.update(parameters.get("to_derive", []))
         available_vars.update(parameters.get("qc_outputs", []))
+        out = parameters.get("output_as")
+        if out:
+            available_vars.update(out if isinstance(out, (list, tuple)) else [out])
 
     if steps_list:
         logger.info("Pipeline variable check successful.")

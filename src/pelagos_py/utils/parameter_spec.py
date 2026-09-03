@@ -145,8 +145,28 @@ def type_errors(schema: dict, params: dict) -> list[str]:
         f"{name} (expected {_expected_str(spec)}, got {type(params[name]).__name__} "
         f"{params[name]!r})"
         for name, spec in schema.items()
-        if name in params and not matches_type(spec, params[name])
+        if name in params and not matches_type(spec, coerce(spec, params[name]))
     ]
+
+
+def option_errors(schema: dict, params: dict) -> list[str]:
+    """Return ``"name (expected one of ..., got ...)"`` for out-of-``options`` params.
+
+    Only supplied params whose spec declares ``options`` are checked. For a
+    list-valued param ``options`` constrains each element.
+    """
+    errors = []
+    for name, spec in schema.items():
+        if name not in params or not spec.get("options"):
+            continue
+        options = spec["options"]
+        value = coerce(spec, params[name])
+        values = value if isinstance(value, (list, tuple)) else [value]
+        bad = [v for v in values if v not in options]
+        if bad:
+            got = bad if isinstance(value, (list, tuple)) else value
+            errors.append(f"{name} (expected one of {options}, got {got!r})")
+    return errors
 
 
 def resolve(
@@ -186,7 +206,9 @@ def resolve(
     Raises
     ------
     ValueError
-        If a required parameter is missing, or an unknown parameter is supplied.
+        If a required parameter is missing, an unknown parameter is supplied, a
+        value has the wrong type, or a value declaring ``options`` is not one of
+        them.
     """
     unknown = set(params) - set(schema) - set(allowed_extra)
     if unknown:
@@ -218,6 +240,12 @@ def resolve(
     if bad_types:
         raise ValueError(
             f"[{label}] invalid parameter type(s): {'; '.join(bad_types)}"
+        )
+
+    bad_options = option_errors(schema, supplied)
+    if bad_options:
+        raise ValueError(
+            f"[{label}] invalid parameter value(s): {'; '.join(bad_options)}"
         )
 
     return resolved

@@ -208,9 +208,30 @@ class BaseStep(ConfigMirrorMixin):
         except ImportError:
             pass
 
-    def log(self, message):
-        """Log an info-level message with step name prefix."""
-        self.logger.info("[%s] %s", self.name, message)
+    def log(self, message, console=True):
+        """Log an info-level message with step name prefix. ``console=False`` keeps it in the log file only."""
+        self.logger.info("[%s] %s", self.name, message, extra={"console": console})
+
+    def log_generating_diagnostics(self):
+        """Log that diagnostics are being produced, distinguishing report-capture runs from ``diagnostics: true``."""
+        if getattr(self, "_report_capture", False):
+            self.log("Generating diagnostics for report")
+        else:
+            self.log("Generating diagnostics")
+
+    def log_progress(self, iterable=None, *, desc, total=None, unit="it", leave=False):
+        """Wrap a countable sub-loop as a standard pipeline progress bar; drop-in for ``tqdm(iterable, ...)``."""
+        from pelagos_py.utils.console import progress_bar
+
+        return progress_bar(
+            iterable,
+            desc=desc,
+            total=total,
+            unit=unit,
+            leave=leave,
+            logger=self.logger,
+            step_name=self.name,
+        )
 
     def log_warn(self, message, warning_type=UserWarning):
         """Log a warning-level message with step name prefix."""

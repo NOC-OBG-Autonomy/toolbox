@@ -17,7 +17,7 @@
 # Pipeline Configuration
 pipeline:
   name: Complete processing pipeline
-  description: A complete demonstration pipeline using Nelson Near Realtime data.
+  description: A complete demonstration pipeline using Churchill Recovered data (August 2024).
   out_directory: examples/data/OG1/
   log_file: complete_processing.log
 
@@ -30,7 +30,7 @@ steps:
 # ===========================================================
   - name: Load OG1
     parameters:
-      file_path: examples/data/OG1/Nelson_646_R.nc # Path to the input NetCDF file
+      file_path: examples/data/OG1/Churchill_647.nc # Path to the input NetCDF file
     diagnostics: false
 
 # Check the loaded file against the OG1 standard. With no 'src', it reuses the
@@ -41,7 +41,7 @@ steps:
     parameters:
       standards: ['og']     # og = OG1
       proceed_on_fail: true # Keep going even if the file fails the checks
-    diagnostics: false
+    diagnostics: true
 
 # ===========================================================
 #                  LATITUDE / LONGITUDE
@@ -236,25 +236,27 @@ steps:
 # far enough out to be nonsense. Note there is deliberately NO spike test here:
 # BBP spikes are individual particles/aggregates, i.e. real signal, and the
 # Isolate BBP Spikes step below separates them rather than discarding them.
-# The BBP from Beta step writes its output back over BBP700, so these flags stay
-# attached to the converted variable.
+# The BBP from Beta step converts BETA_BACKSCATTERING700 into BBP700 and carries
+# these flags across to the derived variable.
   - name: Apply QC
     parameters:
       qc_settings:
         range qc:
           variable_ranges:
-            BBP700:
+            BETA_BACKSCATTERING700:
               3: [0, 0.01, outside]     # Negative = dark-offset noise, high = suspect
               4: [-1.0e-4, 0.05, outside] # Physically absurd / sensor rail
         stuck value qc: # A frozen reading means a dead sensor
           variables:
-            BBP700: 3
+            BETA_BACKSCATTERING700: 3
     diagnostics: false
 
 # Convert the raw backscatter angle measurement (beta) into the particulate
 # backscattering coefficient BBP, using the scattering angle and chi factor.
   - name: BBP from Beta
     parameters:
+      apply_to: BETA_BACKSCATTERING700 # Churchill carries raw beta under this name
+      output_as: BBP700        # Derive BBP700 from it (Nelson stores beta as BBP700 directly)
       theta: 124               # Effective optical backscatter scattering angle (degrees)
       xfactor: 1.076           # Chi factor scaling particulate scattering to total backscatter
     diagnostics: false
@@ -291,9 +293,9 @@ steps:
       blue_phase_name: "BPHASE_DOXY"
     diagnostics: false
 
-# Nelson has no optode temperature at all (no TEMP_DOXY / TEMP_VOLTAGE_DOXY),
-# so "Derive Optode Temperature" is skipped and CTD TEMP is used everywhere
-# below instead.
+# Churchill already has TEMP_DOXY exported by the instrument (no
+# TEMP_VOLTAGE_DOXY to derive it from), so "Derive Optode Temperature" is
+# skipped and TEMP_DOXY is used directly below.
 
 # Pcoef1 for the aa4831 optode (RISC_DO_Optode calibration_sheets).
   - name: "Phase Pressure Correction"
@@ -313,14 +315,13 @@ steps:
               4: [1, -.inf, inside]
     diagnostics: false
 
-# Geometrically shift the optode phase onto the CTD's dense sampling grid,
-# correcting for the water travel time between the two sensors. GLIDER_PITCH
-# isn't available, so this uses the fixed default lag from Woo & Gourcuff
-# (2023) rather than a per-profile derived one. TEMP is already on the CTD
-# grid (it comes from the CTD, not the optode), so it doesn't need shifting.
+# Geometrically shift the optode phase and optode temperature onto the CTD's
+# dense sampling grid, correcting for the water travel time between the two
+# sensors. GLIDER_PITCH isn't available, so this uses the fixed default lag
+# from Woo & Gourcuff (2023) rather than a per-profile derived one.
   - name: "Shift Oxygen To CTD"
     parameters:
-      shift_vars: ["UNCAL_PHASE_DOXY_PCORR"]
+      shift_vars: ["UNCAL_PHASE_DOXY_PCORR", "TEMP_DOXY"]
       lag_seconds: 3.945
       distance_cm: 90
     diagnostics: false
@@ -336,25 +337,25 @@ steps:
 # Stern-Volmer-Uchida conversion using the manufacturer SVUFoilCoef0-6 for
 # optode SN 144 (RISC_DO_Optode/RISC_DO_Optode_scripts/calibration_sheets/
 # calibration_sheet_aa4831_397.py). TODO: confirm this is the right
-# calibration sheet for Nelson's optode - the notebook's glider/optode table
-# lists SN 144 against glider ID "397", not 646.
+# calibration sheet for Churchill's optode - the notebook's glider/optode
+# table lists SN 144 against glider ID "397", not 647.
   - name: "Derive Oxygen Concentration"
     parameters:
       method: "SVU"
-      temperature_name: "TEMP"
+      temperature_name: "TEMP_DOXY_SHIFTED"
       svu_coefficients: [2.67915e-03, 1.12428e-04, 2.29021e-06, 1.43603e+02, -2.08012e-01, -3.59303e+01, 2.82344e+00]
     diagnostics: false
 
   - name: "Molar DOXY Salinity Correction"
     parameters:
       salinity_name: "PRAC_SALINITY"
-      temperature_name: "TEMP"
+      temperature_name: "TEMP_DOXY_SHIFTED"
     diagnostics: false
 
   - name: "Molar DOXY Pressure Correction"
     parameters:
       pressure_name: "PRES"
-      temperature_name: "TEMP"
+      temperature_name: "TEMP_DOXY_SHIFTED"
       molar_doxy_name: "MOLAR_DOXY_PSAL"
       uncalibrated_phase_correction_applied: true
     diagnostics: false
@@ -488,7 +489,7 @@ steps:
   - name: "Data Export"
     parameters:
       export_format: "netcdf"
-      output_path: "examples/data/OG1/Nelson_646_R_Processed.nc"
+      output_path: "examples/data/OG1/Churchill_647_Processed.nc"
 
 # Report assembly
   - name: Write Data Report (Python)

@@ -20,6 +20,7 @@ import yaml
 import pandas as pd
 import numpy as np
 import xarray as xr
+import gc
 import os
 import time
 import logging
@@ -31,13 +32,14 @@ import tempfile
 
 from pelagos_py.utils.config_mirror import ConfigMirrorMixin
 from pelagos_py.utils.valid_config_check import check_pipeline_variables
-from pelagos_py.utils.log_levels import STOP, ColorFormatter
+from pelagos_py.utils.log_levels import STOP, SEVERE
+from pelagos_py.utils.console import make_console_handler, progress_bar
 from pelagos_py.utils import diagnostic_capture
 
 REPORT_STEP_NAME = "Write Data Report (Python)"
 """Name of the report step that triggers background diagnostic capture."""
 
-from pelagos_py.steps import create_step, STEP_CLASSES
+from pelagos_py.steps import create_step, STEP_CLASSES, resolve_step_name
 
 _PIPELINE_LOGGER_NAME = "pelagos_py.pipeline"
 """Global logger name for the pipeline. Used to create child loggers for steps."""
@@ -85,19 +87,9 @@ def _setup_logging(out_dir=None, log_file=None, level=logging.INFO):
         "%Y-%m-%d %H:%M:%S",
     )
 
-    # Console handler. Always added so logs reach the console regardless of
-    # whether a log file is configured. Uses a color formatter so STOP/ERROR
-    # lines show up red in the terminal (file handler stays plain, below).
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(
-        ColorFormatter(
-            "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-            "%Y-%m-%d %H:%M:%S",
-            stream=ch.stream,
-        )
-    )
-    logger.addHandler(ch)
+    # Console handler: always added, compact + coloured, and coexists with live
+    # progress bars (the full prefix lives in the file handler below).
+    logger.addHandler(make_console_handler(level))
 
     # Treat unset / explicit "none"-like values as "no log file". This catches
     # YAML's `log_file: None`, which parses to the string "None" (truthy), as
@@ -213,8 +205,8 @@ class Pipeline(ConfigMirrorMixin):
         steps_config : list of dict
             List of step configurations.
         """
-        self.logger.info("Assembling steps to run from config.")
-        for step in steps_config:
+        self.logger.info("Assembling steps to run from config.", extra={"console": False})
+        for step in progress_bar(steps_config, desc="Assembling steps", unit="step"):
             self.add_step(
                 step_name=step["name"],
                 parameters=step.get("parameters", {}),
@@ -248,7 +240,9 @@ class Pipeline(ConfigMirrorMixin):
         ValueError
             If the step name is not recognized.
         """
-        if step_name not in STEP_CLASSES:
+        # Match case-insensitively but store the canonical registered name.
+        canonical_name = resolve_step_name(step_name)
+        if canonical_name is None:
             available_steps = list(STEP_CLASSES.keys())
             error_msg = (
                 f"Step '{step_name}' is not recognised or missing @register_step."
@@ -267,6 +261,7 @@ class Pipeline(ConfigMirrorMixin):
 
             self.logger.error(error_msg)
             raise ValueError(error_msg)
+        step_name = canonical_name
 
         step_config = {
             "name": step_name,
@@ -275,7 +270,11 @@ class Pipeline(ConfigMirrorMixin):
         }
 
         self.steps.append(step_config)
-        self.logger.info(f"Step '{step_name}' added successfully!")
+        # Per-step confirmation to the log file only; the console shows the
+        # assembly progress bar (see build_steps).
+        self.logger.info(
+            "Step '%s' added successfully!", step_name, extra={"console": False}
+        )
 
         if run_immediately:
             self.logger.info(f"Running step '{step_name}' immediately.")
@@ -314,14 +313,21 @@ class Pipeline(ConfigMirrorMixin):
         if capture:
             step_context["captured_diagnostics"] = self._captured_figures
 
+        # Run position, keeps captured figure filenames unique when a config
+        # repeats a step name (e.g. several 'Apply QC' steps).
+        step_index = getattr(self, "_step_index", 0) + 1
+        self._step_index = step_index
+
         step = create_step(step_config, step_context)
-        self.logger.info(f"Executing: {step.name}")
+        self.logger.info("Executing: %s", step.name, extra={"console": False})
 
         # The user's own diagnostics setting drives interactive display and
         # performance logging. Capture mode additionally force-enables the
         # diagnostic code path so its figures can be saved for the report,
         # without otherwise changing how the step reports performance.
         user_diagnostics = step.diagnostics
+        # True when diagnostics run only to feed the report (not user-requested).
+        step._report_capture = bool(capture and not user_diagnostics)
         captured_images = []
         if capture:
             step.diagnostics = True
@@ -332,6 +338,7 @@ class Pipeline(ConfigMirrorMixin):
                 diagnostic_capture.capture_figures(
                     self._capture_dir,
                     step.name,
+                    step_index,
                     captured_images,
                     # Diagnostics were force-enabled only to capture figures for
                     # the report; a step the user did not opt into must not dump
@@ -365,6 +372,11 @@ class Pipeline(ConfigMirrorMixin):
                 self._captured_figures.append(
                     {"step": step.name, "images": captured_images}
                 )
+
+            # Steps can leave behind large transient arrays (matplotlib figures,
+            # intermediate xarray/pandas objects) that Python's own allocator
+            # would otherwise sit on for a while, inflating RSS between steps.
+            gc.collect()
 
             return result
 
@@ -404,6 +416,7 @@ class Pipeline(ConfigMirrorMixin):
         # so they can be embedded in the report. This exercises every step's
         # diagnostic code, which is why it can slow the run down.
         report_present = any(s["name"] == REPORT_STEP_NAME for s in self.steps)
+        self._step_index = 0
         if report_present:
             self._capture_diagnostics = True
             self._captured_figures = []
@@ -422,10 +435,23 @@ class Pipeline(ConfigMirrorMixin):
             if report_present
             else contextlib.nullcontext()
         )
+        continue_on_step_fail = self.global_parameters.get(
+            "continue_on_step_fail", True
+        )
         try:
             with backend_ctx:
                 for step in self.steps:
-                    self._context = self.execute_step(step, self._context)
+                    try:
+                        self._context = self.execute_step(step, self._context)
+                    except (RuntimeError, SystemExit):
+                        if not continue_on_step_fail:
+                            raise
+                        # execute_step/halt() already logged the underlying
+                        # error; this just marks the step as skipped and moves
+                        # on, keeping the prior step's context.
+                        self.logger.log(
+                            SEVERE, "Step '%s' failed and was skipped.", step["name"]
+                        )
         finally:
             if report_present:
                 #   Figures have been embedded by the report writer by now.

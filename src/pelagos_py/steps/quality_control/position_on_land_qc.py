@@ -17,7 +17,7 @@
 """QC test that identifies glider positions not located on land and flags accordingly."""
 
 #### Mandatory imports ####
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 from geodatasets import get_path
@@ -27,6 +27,7 @@ import polars as pl
 import xarray as xr
 import matplotlib
 import geopandas
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -87,32 +88,20 @@ class position_on_land_qc(BaseQC):
 
     def plot_diagnostics(self):
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(12, 8), dpi=200)
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
 
         # Plot land boundaries
         self.world.plot(ax=ax, facecolor="lightgray", edgecolor="black", alpha=0.3)
 
-        for i in range(10):
-            # Plot by flag number
-            plot_data = self.df.filter(pl.col("LATITUDE_QC") == i)
-            if len(plot_data) == 0:
-                continue
-
-            # Plot the data
-            ax.plot(
-                plot_data["LONGITUDE"],
-                plot_data["LATITUDE"],
-                c=flag_cols[i],
-                ls="",
-                marker="o",
-                label=f"{i}",
-            )
-
-        ax.set(
-            xlabel="Longitude",
-            ylabel="Latitude",
-            title="Position On Land Test",
+        fig_spec.flag_points(
+            ax, self.df["LONGITUDE"], self.df["LATITUDE"], self.df["LATITUDE_QC"]
         )
-        ax.legend(title="Flags", loc="upper right")
-        fig.tight_layout()
+        fig_spec.style_axes(
+            ax,
+            xlabel=fig_spec.axis_label("LONGITUDE", self.data["LONGITUDE"].attrs.get("units")),
+            ylabel=fig_spec.axis_label("LATITUDE", self.data["LATITUDE"].attrs.get("units")),
+        )
+        fig_spec.legend(ax, title="Flags")
+        fig_spec.finish(fig, suptitle="Position On Land Test")
         plt.show(block=True)

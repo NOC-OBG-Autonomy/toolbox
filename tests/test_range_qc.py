@@ -197,6 +197,43 @@ def test_qc_outputs_include_companions():
     assert set(qc.qc_outputs) == {"CNDC_QC", "PRES_QC", "TEMP_QC"}
 
 
+def test_flag_instead_flags_companion_without_flagging_the_source():
+    data = make_data(DEPTH=[2.0, 50.0], CHLA=[0.5, 0.5])
+    qc = range_qc(
+        data,
+        variable_ranges={"DEPTH": {3: [0, 5, "inside"], 2: [0, 5, "outside"]}},
+        flag_instead={"DEPTH": ["CHLA"]},
+    )
+
+    flags = qc.return_qc()
+    assert list(flags["CHLA_QC"].values) == [3, 2]
+    assert "DEPTH_QC" not in flags
+    assert qc.qc_outputs == ["CHLA_QC"]
+
+
+def test_flag_instead_merges_rather_than_overwrites_a_tested_companion():
+    data = make_data(DEPTH=[50.0, 50.0], CHLA=[0.5, 200.0])  # second CHLA is out of range
+    qc = range_qc(
+        data,
+        variable_ranges={
+            "DEPTH": {3: [0, 5, "inside"], 2: [0, 5, "outside"]},
+            "CHLA": {4: [-0.2, 100, "outside"]},
+        },
+        flag_instead={"DEPTH": ["CHLA"]},
+    )
+
+    assert list(qc.return_qc()["CHLA_QC"].values) == [2, 4]
+
+
+def test_flag_instead_source_without_ranges_raises():
+    with pytest.raises(ValueError, match="no entry in variable_ranges"):
+        range_qc(
+            None,
+            variable_ranges={"CHLA": {4: [0, 100]}},
+            flag_instead={"DEPTH": ["CHLA"]},
+        )
+
+
 def test_test_depth_range_adds_depth_requirement_and_limits_checks():
     """A depth window adds DEPTH as a requirement and leaves out-of-window points unchecked (0)."""
     qc = range_qc(

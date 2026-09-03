@@ -86,28 +86,29 @@ steps:
 
 # Correct Values (src/pelagos_py/steps/input_output/correct_values.py):
 #   Applies an affine correction (corrected = slope * value + intercept) to a single variable.
-#   Useful for unit conversions (e.g. CNDC S/m -> mS/cm is a simple x10) or sensor alignment.
-#   The shown config converts CNDC into the mS/cm expected by Derive CTD's GSW salinity calc.
+#   Useful for sensor cross-calibration or unit conversions. (Not needed for CNDC units:
+#   Derive CTD reads the units attribute and converts S/m -> mS/cm for gsw itself.)
+#   The shown config applies a cross-calibration to TEMP.
   - name: "Correct Values"
     parameters:
       # [target_variable]:
       #   Name of the variable to correct.
-      target_variable: CNDC
+      target_variable: TEMP
       # [slope]:
-      #   Multiplicative factor (corrected = slope * value + intercept). x10 for the S/m -> mS/cm conversion.
-      slope: 10.0
+      #   Multiplicative factor (corrected = slope * value + intercept).
+      slope: 1.001
       # [intercept]:
-      #   Additive offset applied after scaling. Use for sensor alignment; leave 0 for a pure unit conversion.
-      intercept: 0.0
+      #   Additive offset applied after scaling. Use for sensor alignment; leave 0 for a pure scaling.
+      intercept: -0.05
       # [expected_range]:
       #   Optional [min, max] for the corrected variable. The correction is applied only when the data's
-      #   median falls OUTSIDE this range, so files already in the right units are left untouched.
+      #   median falls OUTSIDE this range, so files already in the right range are left untouched.
       #   Omit to always apply the correction.
-      expected_range: [20, 45]
+      expected_range: [-2.5, 40]
       # [corrected_units]:
       #   Optional units string written to the variable's attributes after a correction. Leave blank to
       #   keep the existing units.
-      corrected_units: mS/cm
+      corrected_units: degrees_Celsius
     # [diagnostics]:
     #   Plots the raw vs corrected values with the expected-range limits.
     diagnostics: false
@@ -208,6 +209,12 @@ steps:
           #   Flags are merged onto companions (Argo matrix) so the worst flag wins.
           also_flag:
             PRES: [CNDC, TEMP]
+          # [flag_instead]:
+          #   As also_flag, but the source variable's own flags are NOT written - it is tested only
+          #   to flag its companions. eg. to flag CHLA by DEPTH (bad in the top 5m, good below)
+          #   without flagging DEPTH itself:
+          #     variable_ranges: {DEPTH: {3: [0, 5, inside], 2: [0, 5, outside]}}
+          #     flag_instead: {DEPTH: [CHLA]}
           # [diagnostics]:
           #   When the Apply QC step has diagnostics enabled, every flagged variable is plotted
           #   coloured by flag number (no separate 'plot' parameter is needed).
@@ -259,7 +266,7 @@ steps:
           profile_length: 1000
           # [depth_range]:
           #   DEPTH range that a profile must have at least one point in, otherwise it is flagged 3
-          depth_range: [-.inf, 0]
+          depth_range: [0, .inf]
 
         # flag_full_profile (*/flag_full_profile.py):
         #   Flag: 4 (bad)
@@ -310,6 +317,13 @@ steps:
           3: 8
           4: 8
           9: 8
+        # [calculation_flag_filter]:
+        #   Flags that a step's calculations ignore (defaults to [3, 4, 9]). Unlike flag_filter_settings this does
+        #   not remove the data: the samples are still corrected, they just don't inform the correction. Eg. Deep
+        #   Correction leaves bad values out of the dark value estimate but still subtracts the dark value from
+        #   them, and CHLA Quenching won't use them to find the quenching depth. Set to [] to opt out.
+        #   Used by: Deep Correction, Mixed Layer Depth, CHLA Quenching.
+        calculation_flag_filter: [3, 4, 9]
 
 # Interpolate Data (src/pelagos_py/steps/processing/interpolate_data.py):
 # Interpolates over nan values. Paired with QC handling allowing "bad data" to be replaced with nans and interpolated over.
@@ -342,43 +356,24 @@ steps:
       # [depth_column]:
       #   Depth or pressure column used for the analysis.
       depth_column: PRES
-      # [time_window_seconds]:
-      #   Time window (seconds) used for resampling and smoothing of depth/velocity/acceleration.
-      time_window_seconds: 30
-      # [is_propelled]:
-      #   Target phase for near-horizontal transects: true -> propelled (6), false -> parking (4),
-      #   or "auto" to decide from the dataset `id` attribute ("ALR" -> propelled, else parking).
-      is_propelled: "auto"
+      # [smoothing_window_seconds]:
+      #   Rolling-mean window (seconds) applied to depth before differentiating.
+      smoothing_window_seconds: 30
       # [velocity_threshold]:
-      #   Vertical velocity (m/s) above which a sample is flagged as ascent/descent.
+      #   Vertical velocity (depth units/s) a smoothed sample must exceed to count as moving.
       velocity_threshold: 0.033
-      # [acceleration_threshold]:
-      #   Maximum absolute acceleration for a sample to count as a stable horizontal (transect) phase.
-      acceleration_threshold: 0.0005
-      # [transition_buffer_seconds]:
-      #   Buffer (seconds) trimmed from each end of a continuous ascent/descent/transect block.
-      transition_buffer_seconds: 30
-      # [min_duration_minutes]:
-      #   Minimum duration (minutes) for a phase block to be kept.
-      min_duration_minutes: 5
-      # [peak_prominence]:
-      #   Topographic prominence (depth units) a turning point must have to be flagged as an inflection.
-      peak_prominence: 20
-      # [min_samples_between_peaks]:
-      #   Minimum number of bins required between detected inflection peaks.
-      min_samples_between_peaks: 20
+      # [min_duration_seconds]:
+      #   Minimum seconds for an ascent/descent/surfacing run to be trusted.
+      min_duration_seconds: 60
       # [gap_threshold_minutes]:
-      #   A time gap longer than this (minutes) splits the record into disconnected chunks for inflection detection.
+      #   A time gap longer than this (minutes) splits the record into disconnected chunks.
       gap_threshold_minutes: 5
-      # [surface_depth]:
-      #   Depth (depth units) below which data is treated as general surface operation when searching for inflections.
-      surface_depth: 20
-      # [surfacing_threshold]:
-      #   Strict depth threshold below which inflection/transect points are reclassified as surfacing (phase 3).
-      surfacing_threshold: 5
-      # [parking_gradient_threshold]:
-      #   Absolute depth gradient (m/s) above which a drifting parking/propelled block is converted back to ascent/descent.
-      parking_gradient_threshold: 0.005
+      # [surfacing_depth_threshold]:
+      #   Depth below which a propelled/turn run is classified surfacing instead.
+      surfacing_depth_threshold: 2.0
+      # [min_transect_duration_seconds]:
+      #   Minimum duration for an unknown run to be classified propelled.
+      min_transect_duration_seconds: 300
     # [diagnostics]:
     #   If true, plots a static two-panel figure: the phase classification (DEPTH-TIME
     #   coloured by SCI_PHASE) and the derived PROFILE_NUMBER / CYCLE numbering.
@@ -444,9 +439,9 @@ steps:
 # Note that the variables added to the dataset by these steps will appear as <input>_ADJUSTED unless
 # <input> already has the _ADJUSTED suffix, in which case, the input will be modified inplace.
 
-# Chla Deep Correction (src/pelagos_py/steps/processing/chla.py -> chla_deep_correction):
-# Subtracts a constant value from the data so that deep CHLA values are zeroed.
-  - name: "Chla Deep Correction"
+# Deep Correction (src/pelagos_py/steps/processing/deep_correction.py -> deep_correction):
+# Subtracts a constant dark offset so that deep, signal-free values are zeroed.
+  - name: "Deep Correction"
     parameters:
       # [apply_to]:
       #   Name of the variable to apply the correction to.
@@ -454,42 +449,62 @@ steps:
       # [dark_value]:
       #   If null, the dark value will be detemined from the data, else it will use the specified value
       dark_value: null
+      # [depth_var]:
+      #   Vertical-coordinate variable used to find deep data (deeper = larger value).
+      depth_var: PRES
       # [depth_threshold]:
-      #   Data used for calculating the dark value will only be taken from below this depth.
-      depth_threshold: -550
+      #   Only data where depth_var exceeds this is used to compute the dark value.
+      depth_threshold: 950
+      # [n_profiles]:
+      #   Number of deep profiles (in order of occurrence) used to estimate the dark value.
+      n_profiles: 5
+      # [smoothing_window]:
+      #   Rolling-median window (points) applied along each profile before sampling.
+      smoothing_window: 5
+      # [max_valid_value]:
+      #   Deep values at or above this are ignored (guards against non-dark readings).
+      max_valid_value: 5
+      # [min_valid_points]:
+      #   A profile must have at least this many valid deep points to contribute.
+      min_valid_points: 3
     # [diagnostics]:
-    #   Create a plot showing CHLA values over depth with lines for the dark value and depth threshold
+    #   Plot the deep profiles used and the deep values before/after correction.
     diagnostics: false
 
-# Chla Quenching Correction (src/pelagos_py/steps/processing/chla.py -> chla_quenching_correction):
+# CHLA Quenching (src/pelagos_py/steps/processing/chla_quenching.py -> chla_quenching_correction):
 # Offers a selection of Non-photochemical quenching correction techniques for removing Chla signal
 # supression caused by phytoplankton quenching.
-  - name: "Chla Quenching Correction"
+  - name: "CHLA Quenching"
     parameters:
       # [method]:
-      #   Method used for quenching correction. Currently only Argo is available which follows Xing et al. 2012
-      method: Argo
+      #   Method used for quenching correction. Implemented: 'xing2012' (MLD-based),
+      #   'biermann2015' (euphotic-depth-based, needs PAR), 'xing2018'
+      #   (backscatter-based, needs BBP + PAR + MLD; see 'hybrid'), 'hemsley2015'
+      #   (global night fluorescence-bbp regression, needs BBP + PAR), 'thomalla2018'
+      #   (per-night fl:bbp ratio profile, needs BBP + PAR), 'sackmann2008' (max
+      #   fl:bbp ratio within the MLD, needs BBP + MLD) and 'swart2015' (max fl:bbp
+      #   ratio within the euphotic zone, needs BBP + PAR).
+      method: xing2012
+      # [hybrid]:
+      #   Only used when method is 'xing2018'. When true (the default), shallow-mixing
+      #   profiles (iPAR=15 depth > MLD) use the Terrats et al. (2020) X18_S08 hybrid
+      #   instead of Xing 2018; deep-mixing profiles use Xing 2018 either way. When
+      #   false, Xing 2018 is applied to every profile.
+      hybrid: true
       # [apply_to]:
       #   Name of the variable to apply the correction to.
       apply_to: CHLA
-      # [mld_settings]
-      #   Settings to tune the thresholding method for determining mixed later depth (MLD) which is a
-      #   required intermediate product for this correction.
-      mld_settings:
-        # [threshold_on]:
-        #   Variable to use for determining the MLD
-        threshold_on: TEMP
-        # [reference_depth]:
-        #   The near-surface point used to set the reference.
-        reference_depth: -10
-        # [threshold]:
-        #   The MLD is determined to be the first depth point at which the difference between a measurement and
-        #   its reference is greater than the threshold.
-        threshold: 0.2
-      # [plot_profiles]:
-      #   List of profile numbers to be plotted
-      plot_profiles: [101, 200, 201, 300, 301, 400]
-    diagnostics: true
+      # [bbp_var]:
+      #   Backscatter variable used by the backscatter-based methods. Defaults to the
+      #   despiked 'BBP700_BASELINE'; falls back through BBP700/BBP532 if absent.
+      bbp_var: BBP700_BASELINE
+      # [par_var]:
+      #   Downwelling PAR variable used by the PAR-based methods.
+      par_var: DOWNWELLING_PAR
+      # Note: the MLD-based methods ('xing2012'/'xing2018'/'sackmann2008')
+      #   read the 'MLD' variable produced by a preceding 'Mixed Layer Depth' step;
+      #   configure the MLD method and thresholds there, not here.
+    diagnostics: false
 
 
 # ------------------------------------------------------------------------------------------- Backscatter processing -------------------------------------------------------------------------------------------
@@ -563,9 +578,20 @@ steps:
       correction_coefficient: 0.1
     diagnostics: false
 
+  - name: "Shift Oxygen To CTD"
+    parameters:
+      # <MANDATORY>
+      shift_vars: ["UNCAL_PHASE_DOXY_PCORR", "TEMP_DOXY"]
+      # <OPTIONAL>
+      # lag_seconds: 2.0
+      pitch_name: "GLIDER_PITCH"
+      distance_cm: 90
+      cast_id_var: "PROFILE_DIRECTION"
+    diagnostics: false
+
   - name: "Derive Calibrated Phase"
     parameters:
-      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR"
+      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR_SHIFTED"
       calib_coefficients: [0, 1, 0, 0]
     diagnostics: false
 
@@ -600,6 +626,13 @@ steps:
       temperature_name: "CONS_TEMP"
       molar_doxy_name: "MOLAR_DOXY_PSAL"
       uncalibrated_phase_correction_applied: true
+    diagnostics: false
+
+  - name: Correct Values
+    parameters:
+      target_variable: MOLAR_DOXY_PSAL_PRES
+      output_as: MOLAR_DOXY_ADJUSTED
+      append_description: Renamed from MOLAR_DOXY_PSAL_PRES.
     diagnostics: false
 
 # ------------------------------------------------------------------------------------------- Report assembly -------------------------------------------------------------------------------------------

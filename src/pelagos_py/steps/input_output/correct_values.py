@@ -16,8 +16,8 @@
 
 """Pipeline step for applying a linear correction (slope/intercept) to a variable.
 
-Generic enough for unit conversions (e.g. CNDC S/m -> mS/cm is a simple x10),
-sensor alignment (slope + intercept), or any other affine rescaling. An optional
+Generic enough for sensor cross-calibration (slope + intercept), unit conversions,
+or any other affine rescaling. An optional
 ``expected_range`` makes the correction self-detecting: it is applied only when
 the data looks like it still needs it, so the same config keeps working even after
 upstream input files are fixed.
@@ -30,6 +30,7 @@ from pelagos_py.steps.base_step import BaseStep, register_step
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -42,14 +43,22 @@ class CorrectValues(BaseStep):
     applied only when the median falls *outside* that range (i.e. the data still looks
     uncorrected). When ``expected_range`` is omitted the correction is always applied.
 
-    This makes a config robust to upstream fixes: e.g. a CNDC unit conversion
-    (``slope: 10``) targeting ``expected_range: [20, 45]`` will scale S/m data into
-    mS/cm, but quietly skip files that already arrive in mS/cm.
+    This makes a config robust to upstream fixes: a unit conversion targeting an
+    ``expected_range`` quietly skips files that already arrive in the right units.
+    (CNDC does not need this: Derive CTD reads the units attribute and converts
+    S/m -> mS/cm for gsw itself.)
 
     Parameters
     ----------
     target_variable : str
         Name of the variable to correct (e.g. ``"CNDC"``).
+    output_as : str or list, optional
+        Name(s) to write the result under. Defaults to ``target_variable`` (in-place).
+        Set it to a new name to copy/rename, e.g. ``LATITUDE_GPS`` -> ``LATITUDE``
+        with ``slope: 1`` leaves the values unchanged and just exposes the new name.
+        A list writes the same result under several names, e.g.
+        ``[CHLA, CHLA_MID]`` keeps a mid-processing snapshot in ``CHLA_MID`` while
+        later steps continue working on ``CHLA``.
     slope : float, optional
         Multiplicative factor (default ``1.0``). For a x10 unit conversion, set ``10``.
     intercept : float, optional
@@ -58,9 +67,16 @@ class CorrectValues(BaseStep):
         ``[min, max]`` for the *corrected* variable. The correction is applied only
         when the data's median falls outside this range. If omitted, the correction
         is always applied.
+    time_start, time_end : str, optional
+        Restrict the correction to a TIME window (e.g. ``"2024-07-01T00:00:00"``).
+        Points outside the window keep their raw value. Either bound may be omitted.
     corrected_units : str, optional
-        Units string written to the variable's attributes after a correction is
-        applied (e.g. ``"mS/cm"``). Left untouched if omitted or if no correction runs.
+        Units string written to the output variable's attributes after a correction
+        is applied (e.g. ``"mS/cm"``). Left untouched if omitted or if no correction runs.
+    append_description, overwrite_description : str, optional
+        Note written to the output variable's ``comment`` attribute (e.g.
+        ``"Renamed from LATITUDE_GPS"``). ``append_description`` adds to any existing
+        comment; ``overwrite_description`` replaces it. Set at most one.
 
     Examples
     --------
@@ -71,11 +87,10 @@ class CorrectValues(BaseStep):
         steps:
           - name: Correct Values
             parameters:
-              target_variable: CNDC
-              slope: 10.0
-              intercept: 0.0
-              expected_range: [20, 45]
-              corrected_units: mS/cm
+              target_variable: TEMP
+              slope: 1.001
+              intercept: -0.05
+              expected_range: [-2.5, 40]
             diagnostics: false
     """
 
@@ -88,6 +103,13 @@ class CorrectValues(BaseStep):
             "type": str,
             "required": True,
             "description": "Name of the variable to correct (e.g. 'CNDC').",
+        },
+        "output_as": {
+            "type": [str, list],
+            "default": None,
+            "description": "Name(s) to write the result under (default: target_variable, "
+                           "i.e. in place). A new name copies/renames; a list writes the "
+                           "same result under several names (e.g. [CHLA, CHLA_MID]).",
         },
         "slope": {
             "type": float,
@@ -111,8 +133,28 @@ class CorrectValues(BaseStep):
         "corrected_units": {
             "type": str,
             "default": None,
-            "description": "Optional units string written to the variable's attributes after a "
-                           "correction is applied (e.g. 'mS/cm').",
+            "description": "Optional units string written to the output variable's attributes "
+                           "after a correction is applied (e.g. 'mS/cm').",
+        },
+        "time_start": {
+            "type": str,
+            "default": None,
+            "description": "Optional ISO timestamp; only points at/after this TIME are corrected.",
+        },
+        "time_end": {
+            "type": str,
+            "default": None,
+            "description": "Optional ISO timestamp; only points at/before this TIME are corrected.",
+        },
+        "append_description": {
+            "type": str,
+            "default": None,
+            "description": "Optional note appended to the output variable's 'comment' attribute.",
+        },
+        "overwrite_description": {
+            "type": str,
+            "default": None,
+            "description": "Optional note that replaces the output variable's 'comment' attribute.",
         },
     }
 
@@ -127,6 +169,15 @@ class CorrectValues(BaseStep):
                 f"Available variables: {list(self.data.data_vars)}."
             )
 
+        outs = (
+            list(self.output_as) if isinstance(self.output_as, (list, tuple))
+            else [self.output_as or var]
+        )
+        if self.append_description is not None and self.overwrite_description is not None:
+            raise ValueError(
+                f"[{self.name}] set only one of 'append_description' / 'overwrite_description'."
+            )
+
         vals = self.data[var].values.astype(float)
         self._raw_data = vals.copy()
         self.applied = False
@@ -137,33 +188,75 @@ class CorrectValues(BaseStep):
             self.context["data"] = self.data
             return self.context
 
-        # Decide whether the correction is needed.
+        # Restrict the correction to a TIME window when requested.
+        window = np.ones(vals.shape, dtype=bool)
+        if self.time_start is not None or self.time_end is not None:
+            if "TIME" not in self.data:
+                raise ValueError(
+                    f"[{self.name}] time_start/time_end need a 'TIME' variable in the data."
+                )
+            times = self.data["TIME"].values
+            if self.time_start is not None:
+                window &= times >= np.datetime64(self.time_start)
+            if self.time_end is not None:
+                window &= times <= np.datetime64(self.time_end)
+
+        # Decide whether the correction is needed, judging by the windowed data.
+        do_scale = True
         if self.expected_range is not None:
             lo, hi = float(self.expected_range[0]), float(self.expected_range[1])
-            median_val = float(np.nanmedian(vals[valid_mask]))
-            if lo <= median_val <= hi:
+            sample = vals[valid_mask & window]
+            median_val = float(np.nanmedian(sample)) if sample.size else np.nan
+            if np.isfinite(median_val) and lo <= median_val <= hi:
                 self.log(
                     f"'{var}' median ({median_val:.4g}) is within expected range "
                     f"[{lo}, {hi}]; skipping correction."
                 )
-                self.context["data"] = self.data
-                return self.context
+                do_scale = False
+            elif np.isfinite(median_val):
+                self.log(
+                    f"'{var}' median ({median_val:.4g}) is outside expected range "
+                    f"[{lo}, {hi}]; applying correction."
+                )
+
+        # Nothing changes when there is no scaling, no rename/copy and no comment to set.
+        no_description = self.append_description is None and self.overwrite_description is None
+        if not do_scale and outs == [var] and no_description:
+            self.context["data"] = self.data
+            return self.context
+
+        # Apply the affine correction within the window (NaNs propagate harmlessly).
+        corrected = vals.copy()
+        if do_scale:
+            corrected[window] = self.slope * vals[window] + self.intercept
+            self.applied = True
+
+        # Write to each output name (a copy/rename when it differs from target_variable).
+        for out in outs:
+            self.data[out] = self.data[var].copy(data=corrected)
+        self._outs = outs
+
+        names = ", ".join(f"'{o}'" for o in outs)
+        if self.applied:
             self.log(
-                f"'{var}' median ({median_val:.4g}) is outside expected range "
-                f"[{lo}, {hi}]; applying correction."
+                f"Applied correction to {names}: corrected = {self.slope} * value + {self.intercept}."
             )
+        copies = [o for o in outs if o != var]
+        if copies:
+            self.log(f"Wrote '{var}' to {', '.join(repr(o) for o in copies)}.")
 
-        # Apply the affine correction (NaNs propagate harmlessly through arithmetic).
-        corrected = self.slope * vals + self.intercept
-        self.data[var].values = corrected
-        self.applied = True
-        self.log(
-            f"Applied correction to '{var}': corrected = {self.slope} * value + {self.intercept}."
-        )
-
+        for out in outs:
+            if self.corrected_units is not None:
+                self.data[out].attrs["units"] = self.corrected_units
+            if self.overwrite_description is not None:
+                self.data[out].attrs["comment"] = self.overwrite_description
+            elif self.append_description is not None:
+                existing = self.data[out].attrs.get("comment", "")
+                self.data[out].attrs["comment"] = (
+                    f"{existing} {self.append_description}".strip() if existing else self.append_description
+                )
         if self.corrected_units is not None:
-            self.data[var].attrs["units"] = self.corrected_units
-            self.log(f"Set '{var}' units to '{self.corrected_units}'.")
+            self.log(f"Set {names} units to '{self.corrected_units}'.")
 
         if self.diagnostics:
             self.plot_diagnostics()
@@ -176,7 +269,7 @@ class CorrectValues(BaseStep):
             return
 
         var = self.target_variable
-        corrected = self.data[var].values
+        corrected = self.data[self._outs[0]].values
 
         # Plot against TIME if available, otherwise against sample index.
         if "TIME" in self.data:
@@ -187,33 +280,26 @@ class CorrectValues(BaseStep):
             xlabel = "Sample index"
 
         matplotlib.use("tkagg")
-        fig, ax = plt.subplots(figsize=(10, 5), dpi=150)
+        fig, axes = fig_spec.new_fig()
+        ax = axes[0][0]
 
-        ax.plot(
-            x, self._raw_data, marker="o", ls="", color="#b2bec3",
-            markersize=1.5, alpha=0.7, label="Raw",
-        )
-        units = str(self.data[var].attrs.get("units", "")).strip()
-        corrected_label = f"Corrected ({units})" if units else "Corrected"
-        ax.plot(
-            x, corrected, marker="o", ls="", color="#0984e3",
-            markersize=1.5, alpha=0.7, label=corrected_label,
-        )
+        fig_spec.points(ax, x, self._raw_data, color=fig_spec.FLAGGED, label="Raw")
+        fig_spec.points(ax, x, corrected, color=fig_spec.CATEGORY[1], label="Corrected")
 
         if self.expected_range is not None:
             lo, hi = float(self.expected_range[0]), float(self.expected_range[1])
             ax.axhline(hi, color="black", linestyle="--", alpha=0.6, linewidth=1, label=f"Max ({hi})")
             ax.axhline(lo, color="black", linestyle="--", alpha=0.6, linewidth=1, label=f"Min ({lo})")
 
-        ax.set_ylabel(var, fontsize=8)
-        ax.set_xlabel(xlabel, fontsize=8)
-        ax.grid(True, alpha=0.3)
-        ax.tick_params(axis="both", which="major", labelsize=8)
-        ax.legend(loc="upper right", fontsize=8, framealpha=0.9, fancybox=True)
+        if xlabel == "Time":
+            fig_spec.date_axis(ax, which="x")
+        ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+        fig_spec.style_axes(ax, xlabel=xlabel, ylabel=ylabel)
+        fig_spec.legend(ax)
 
-        fig.suptitle(
-            f"Value Correction: {var}\n(corrected = {self.slope} * value + {self.intercept})",
-            fontsize=10, fontweight="bold",
+        fig_spec.finish(
+            fig,
+            suptitle=f"Value Correction: {var}\n"
+            f"(corrected = {self.slope} * value + {self.intercept})",
         )
-        fig.tight_layout()
         plt.show(block=True)

@@ -18,12 +18,13 @@
 
 #### Mandatory imports ####
 import numpy as np
-from pelagos_py.steps.base_qc import BaseQC, register_qc, flag_cols
+from pelagos_py.steps.base_qc import BaseQC, register_qc
 
 #### Custom imports ####
 import matplotlib.pyplot as plt
 import xarray as xr
 import matplotlib
+from pelagos_py.utils import fig_spec
 
 
 @register_qc
@@ -127,37 +128,14 @@ class flag_full_profile(BaseQC):
 
         # Plot the QC output
         n_plots = len(self.check_vars.keys())
-        fig, axs = plt.subplots(nrows=n_plots, figsize=(8, 4 * n_plots), dpi=200)
-        if n_plots == 1:
-            axs = [axs]
-
-        for ax, var in zip(axs, self.check_vars.keys()):
-            for i in range(10):
-                # Plot by flag number
-                plot_data = self.data[[var, "N_MEASUREMENTS"]].where(
-                    self.data[f"{var}_QC"] == i, drop=True
-                )
-
-                if len(plot_data[var]) == 0:
-                    continue
-
-                # Plot the data
-                ax.plot(
-                    plot_data["N_MEASUREMENTS"],
-                    plot_data[var],
-                    c=flag_cols[i],
-                    ls="",
-                    marker="o",
-                    label=f"{i}",
-                )
-
-            ax.set(
-                xlabel="Index",
-                ylabel=var,
-                title=f"{var} Flag Full Profile",
+        fig, axes = fig_spec.new_fig(nrows=n_plots, sharex=True)
+        for ax, var in zip(axes[:, 0], self.check_vars.keys()):
+            fig_spec.flag_points(
+                ax, self.data["N_MEASUREMENTS"], self.data[var], self.data[f"{var}_QC"]
             )
+            ylabel = fig_spec.axis_label(var, self.data[var].attrs.get("units"))
+            fig_spec.style_axes(ax, title=f"{var} Flag Full Profile", xlabel="Index", ylabel=ylabel)
+            fig_spec.legend(ax, title="Flags")
 
-            ax.legend(title="Flags", loc="upper right")
-
-        fig.tight_layout()
+        fig_spec.finish(fig)
         plt.show(block=True)

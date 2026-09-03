@@ -26,6 +26,7 @@ import polars as pl
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from pelagos_py.utils import fig_spec
 
 
 @register_step
@@ -61,6 +62,7 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
 
         - name: "Interpolate Data"
           parameters:
+            max_interp_time: 5.0
             qc_handling_settings: {
               flag_filter_settings: {
                 "PRES": [3, 4, 9],
@@ -76,10 +78,22 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
     step_name = "Interpolate Data"
     required_variables = ["TIME"]
     provided_variables = []
+    uses_data_subset = True
 
-    # Takes no step-specific parameters; variables to interpolate are driven entirely
-    # by the framework ``qc_handling_settings`` (flag_filter_settings).
-    parameter_schema = {}
+    # Variables to interpolate are driven entirely by the framework
+    # ``qc_handling_settings`` (flag_filter_settings).
+    parameter_schema = {
+        "max_interp_time": {
+            "type": [float, bool, str],
+            "default": 5.0,
+            "description": (
+                "Maximum time (minutes) from the nearest surrounding non-interpolated "
+                "point that a gap will be filled across, so interpolation only fills "
+                "small gaps rather than whole missing profiles. 0/False/off disables "
+                "the limit (fills gaps of any size)."
+            ),
+        },
+    }
 
     def run(self):
         """
@@ -104,6 +118,8 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
 
         self.filter_qc()
 
+        max_interp_seconds = self._max_interp_seconds()
+
         # Convert to polars dataframe
         self.df = pl.from_pandas(
             self.data[list(self.filter_settings.keys() | {"TIME"})].to_dataframe(),
@@ -122,8 +138,14 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
             for var in self.filter_settings.keys()
         )
 
+        time = self.df["TIME"].to_numpy()
         for var in self.filter_settings.keys():
-            self.data[var][:] = self.df[var].to_numpy()
+            interpolated = self.df[var].to_numpy().copy()
+            if max_interp_seconds:
+                was_nan = self.unprocessed_df[var].is_nan().to_numpy()
+                self._limit_gap_fill(time, interpolated, was_nan, max_interp_seconds)
+            self.df = self.df.with_columns(pl.Series(var, interpolated))
+            self.data[var][:] = interpolated
 
         self.reconstruct_data()
         self.update_qc()
@@ -132,8 +154,43 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
             self.generate_diagnostics()
 
         # Update the context with the enhanced dataset
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
+
+    def _max_interp_seconds(self):
+        """Resolve ``max_interp_time`` (minutes) to seconds, or None if disabled."""
+        value = self.max_interp_time
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in ("off", "false", "no", "0", "0.0"):
+                return None
+            value = float(text)
+        if not value:
+            return None
+        return float(value) * 60
+
+    @staticmethod
+    def _limit_gap_fill(time, interpolated, was_nan, max_seconds):
+        """Revert interior interpolated points back to NaN if their surrounding
+        gap (between the nearest non-interpolated points either side) exceeds
+        max_seconds. Leading/trailing NaNs are untouched (interpolate_by never
+        fills them)."""
+        valid_idx = np.flatnonzero(~was_nan)
+        if valid_idx.size == 0:
+            return
+
+        prev_valid = np.full(was_nan.shape, -1)
+        prev_valid[valid_idx] = valid_idx
+        np.maximum.accumulate(prev_valid, out=prev_valid)
+
+        next_valid = np.full(was_nan.shape, was_nan.size)
+        next_valid[valid_idx] = valid_idx
+        next_valid[::-1] = np.minimum.accumulate(next_valid[::-1])
+
+        interior = was_nan & (prev_valid >= 0) & (next_valid < was_nan.size)
+        gap_seconds = (time[next_valid[interior]] - time[prev_valid[interior]]) / np.timedelta64(1, "s")
+        too_far = np.flatnonzero(interior)[gap_seconds > max_seconds]
+        interpolated[too_far] = np.nan
 
     def generate_diagnostics(self):
         """
@@ -150,12 +207,13 @@ class InterpolateVariables(BaseStep, QCHandlingMixin):
         """
 
         matplotlib.use("tkagg")
-        fig, axs = plt.subplots(
-            nrows=2, sharex=True, sharey=True, figsize=(12, 8), dpi=200
-        )
+        fig, axes = fig_spec.new_fig(nrows=2, sharex=True, sharey=True)
 
         plot_var = list(self.filter_settings.keys())[0]
-        for ax, data in zip(axs.flatten(), [self.unprocessed_df, self.df]):
-            ax.plot(data[plot_var])
+        titles = ["Original", "Interpolated"]
+        for ax, data, title in zip(axes[:, 0], [self.unprocessed_df, self.df], titles):
+            ax.plot(data[plot_var], color=fig_spec.CATEGORY[1])
+            fig_spec.style_axes(ax, title=title, ylabel=plot_var)
 
+        fig_spec.finish(fig, suptitle=f"Interpolation: {plot_var}")
         plt.show(block=True)

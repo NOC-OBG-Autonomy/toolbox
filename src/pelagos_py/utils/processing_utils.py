@@ -17,6 +17,13 @@
 import numpy as np
 
 
+# ------------------------------- Units -----------------------------------
+def cndc_scale_factor(units):
+    """Factor converting conductivity to the mS/cm gsw expects; assumes S/m when units are unset."""
+    u = (units or "").lower().replace(" ", "").replace("/", "")
+    return 1.0 if u.startswith("mscm") else 10.0
+
+
 # ----------------------------- NaN Handling ------------------------------
 def find_nans(data: np.ndarray):
     """

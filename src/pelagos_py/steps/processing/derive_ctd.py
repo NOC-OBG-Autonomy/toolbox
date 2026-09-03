@@ -27,13 +27,8 @@ import numpy as np
 import gsw
 import matplotlib
 import matplotlib.pyplot as plt
-
-# Diagnostic plot settings
-PLOT_SIZE = (10, 8)  # Widened slightly to accommodate the external legend
-PLOT_COLOURS = ["#00b894", "#0984e3", "#d63031", "#fdcb6e", "#6c5ce7", "#e84393", "#00cec9", "#e17055"]
-FLAGGED_COLOUR = "#b2bec3"  # Grey for flagged/bad data
-MARKER_SIZE = 1
-PLOT_ALPHA = 0.6
+from pelagos_py.utils import fig_spec
+from pelagos_py.utils.processing_utils import cndc_scale_factor
 
 
 @register_step
@@ -83,6 +78,7 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         "CONS_TEMP",
         "DENSITY",
     ]
+    uses_data_subset = True
 
     parameter_schema = {
         "to_derive": {
@@ -106,18 +102,32 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
 
         # Convert xarray Dataset to Polars DataFrame for efficient numerical processing
         # Extract only the variables needed for GSW calculations
+        base_columns = ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
+        # Pull in any already-derived variable too, so derivations can be split across
+        # two Derive CTD steps (e.g. to correct PRAC_SALINITY in between).
+        derived_columns = [
+            var
+            for var in self.provided_variables
+            if var in self.data and var not in base_columns
+        ]
         df = pl.from_pandas(
-            self.data[
-                ["TIME", "LATITUDE", "LONGITUDE", "CNDC", "PRES", "TEMP"]
-            ].to_dataframe(),
+            self.data[base_columns + derived_columns].to_dataframe(),
             nan_to_null=False,
         )
+
+        # gsw wants conductivity in mS/cm; scale from the units attribute (S/m assumed if unset)
+        cndc_factor = cndc_scale_factor(self.data["CNDC"].attrs.get("units"))
 
         # Define GSW (Gibbs SeaWater) function calls for deriving oceanographic variables
         # Each tuple contains: (output_variable_name, gsw_function, [required_input_variables])
         gsw_function_calls = (
-            ("DEPTH", gsw.z_from_p, ["PRES", "LATITUDE"]),
-            ("PRAC_SALINITY", gsw.SP_from_C, ["CNDC", "TEMP", "PRES"]),
+            # gsw.z_from_p returns TEOS-10 height (negative down); negate for OG1 positive-down depth
+            ("DEPTH", lambda p, lat: -gsw.z_from_p(p, lat), ["PRES", "LATITUDE"]),
+            (
+                "PRAC_SALINITY",
+                lambda c, t, p: gsw.SP_from_C(c * cndc_factor, t, p),
+                ["CNDC", "TEMP", "PRES"],
+            ),
             (
                 "ABS_SALINITY",
                 gsw.SA_from_SP,
@@ -130,11 +140,17 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         # Define metadata for each derived variable following CF conventions
         variable_metadata = {
             "DEPTH": {
-                "long_name": "Depth from surface (negative down as defined by TEOS-10)",
-                "units": "m",
-                "standard_name": "DEPTH",
-                "valid_min": -10925,  # Mariana Trench depth
-                "valid_max": 1,  # Above sea level
+                "long_name": (
+                    "Depth below surface of the water body by unknown instrument "
+                    "and correction to zero at sea level using unspecified algorithm."
+                ),
+                "units": "metres",
+                "standard_name": "depth",
+                "valid_min": 0.0,
+                "valid_max": 10000.0,
+                "positive": "down",
+                "ancillary_variables": "DEPTH_QC",
+                "depth_vocabulary": "https://vocab.nerc.ac.uk/collection/OG1/current/DEPTH/",
             },
             "PRAC_SALINITY": {
                 "long_name": "Practical salinity",
@@ -205,7 +221,7 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
         self.update_qc()
 
         # Update the context with the enhanced dataset
-        self.context["data"] = self.data
+        self.context["data"].update(self.data)
         return self.context
 
     def plot_diagnostics(self):
@@ -220,107 +236,28 @@ class DeriveCTDVariables(BaseStep, QCHandlingMixin):
             return
 
         matplotlib.use("tkagg")
-        n_vars = len(plot_vars)
-
-        fig, axes = plt.subplots(n_vars, 1, sharex=True, figsize=PLOT_SIZE, dpi=150)
-
-        if n_vars == 1:
-            axes = [axes]
-
+        fig, axes = fig_spec.new_fig(nrows=len(plot_vars), sharex=True)
         time_data = self.data["TIME"].values
 
-        for i, var_name in enumerate(plot_vars):
-            ax = axes[i]
-            colour = PLOT_COLOURS[i % len(PLOT_COLOURS)]
+        for i, (ax, var_name) in enumerate(zip(axes[:, 0], plot_vars)):
             data_vals = self.data[var_name].values
 
-            # Extract units and format cleanly (ignore "1" or missing units)
-            units = str(self.data[var_name].attrs.get("units", "")).strip()
-            if units in ["1", "unitless", "unknown", "None", ""]:
-                unit_str = ""
-            else:
-                unit_str = f"\n[{units}]"
-
-            # Determine QC status if the QC column exists
+            # Colour by QC flag where a QC column exists, else a single series.
             qc_col = f"{var_name}_QC"
             if qc_col in self.data:
-                qc_vals = self.data[qc_col].values
-                # Treat 0 (No QC), 1, 2, 5, 8 as "Good" points
-                good_mask = np.isin(qc_vals, [0, 1, 2, 5, 8])
-                bad_mask = ~good_mask & ~np.isnan(data_vals)
-                good_plot_mask = good_mask & ~np.isnan(data_vals)
-
-                # Plot bad data first so it sits beneath good data
-                if np.any(bad_mask):
-                    ax.plot(
-                        time_data[bad_mask],
-                        data_vals[bad_mask],
-                        ls="",
-                        marker="o",
-                        markersize=MARKER_SIZE,
-                        alpha=PLOT_ALPHA,
-                        c=FLAGGED_COLOUR,
-                        zorder=1,
-                    )
-
-                # Plot good data on top
-                if np.any(good_plot_mask):
-                    ax.plot(
-                        time_data[good_plot_mask],
-                        data_vals[good_plot_mask],
-                        ls="",
-                        marker="o",
-                        markersize=MARKER_SIZE,
-                        alpha=PLOT_ALPHA,
-                        c=colour,
-                        zorder=2,
-                    )
-
-                # We calculate stats only on the good data for a cleaner representation
-                stats_data = data_vals[good_plot_mask]
+                fig_spec.flag_points(ax, time_data, data_vals, self.data[qc_col].values)
+                fig_spec.legend(ax, title="Flags")
             else:
-                # Fallback if no QC column exists
-                ax.plot(
-                    time_data,
-                    data_vals,
-                    ls="",
-                    marker="o",
-                    markersize=MARKER_SIZE,
-                    alpha=PLOT_ALPHA,
-                    c=colour,
-                    zorder=2,
-                )
-                stats_data = data_vals[~np.isnan(data_vals)]
+                fig_spec.points(ax, time_data, data_vals, color=fig_spec.CATEGORY[0])
 
-            # Calculate robust statistics
-            if len(stats_data) > 0:
-                v_min = np.nanmin(stats_data)
-                v_max = np.nanmax(stats_data)
-                v_mean = np.nanmean(stats_data)
-                v_std = np.nanstd(stats_data)
+            fig_spec.date_axis(ax, which="x")
+            ylabel = fig_spec.axis_label(var_name, self.data[var_name].attrs.get("units"))
+            xlabel = "Time" if i == len(plot_vars) - 1 else None
+            fig_spec.style_axes(ax, xlabel=xlabel, ylabel=ylabel)
 
-                # Add formatted statistical legend outside the plot area
-                stat_text = f"Min: {v_min:.3f}\nMax: {v_max:.3f}\nMean: {v_mean:.3f}\nStd: {v_std:.3f}"
-                ax.plot([], [], ls="", label=stat_text)
-                ax.legend(
-                    loc="center left",
-                    bbox_to_anchor=(1.01, 0.5),
-                    fontsize=6,
-                    framealpha=0.9,
-                    fancybox=True,
-                )
-
-            ax.set_ylabel(f"{var_name}{unit_str}", fontsize=7)
-            ax.grid(True, alpha=0.3)
-            ax.tick_params(axis="both", which="major", labelsize=7)
-
-            # Invert y-axis for pressure so the ocean surface is at the top of the plot
-            if var_name == "PRES":
+            # Invert y-axis for pressure/depth so the ocean surface is at the top of the plot
+            if var_name in ("PRES", "DEPTH"):
                 ax.invert_yaxis()
 
-        axes[-1].set_xlabel("Time", fontsize=8)
-        fig.suptitle(f"{self.step_name} Diagnostics", fontsize=10, fontweight="bold")
-
-        # Adjust layout to leave room on the right for the external legends
-        fig.tight_layout(rect=[0, 0, 0.88, 1])
+        fig_spec.finish(fig, suptitle=f"{self.step_name} Diagnostics")
         plt.show(block=True)

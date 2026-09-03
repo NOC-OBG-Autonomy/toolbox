@@ -284,6 +284,7 @@ def test_format_checker_section_no_results():
 
 def _make_step(context, parameters):
     step = wrp.WriteDataReportPython.__new__(wrp.WriteDataReportPython)
+    step.name = "Write Data Report"
     step.context = context
     step.parameters = parameters
     step.log = MagicMock()

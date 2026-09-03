@@ -17,7 +17,7 @@
 # Pipeline Configuration
 pipeline:
   name: Complete processing pipeline
-  description: A complete demonstration pipeline using Nelson Near Realtime data.
+  description: A complete demonstration pipeline using ALR_4 Recovered data.
   out_directory: examples/data/OG1/
   log_file: complete_processing.log
 
@@ -30,18 +30,35 @@ steps:
 # ===========================================================
   - name: Load OG1
     parameters:
-      file_path: examples/data/OG1/Nelson_646_R.nc # Path to the input NetCDF file
+      file_path: examples/data/OG1/ALR_4_649.nc # Path to the input NetCDF file
     diagnostics: false
 
-# Check the loaded file against the OG1 standard. With no 'src', it reuses the
-# file from Load OG1 above. A short pass/fail summary is printed to the console;
-# omit 'output_type' (as here) for console only, or set it to 'json'/'rst' (with
-# an out_directory) to also save a detailed report file.
+
+# Check the loaded file against the OG1 standard. 
   - name: Format Checker
     parameters:
       standards: ['og']     # og = OG1
       proceed_on_fail: true # Keep going even if the file fails the checks
     diagnostics: false
+
+
+# ALR carries position only as LATITUDE_GPS/LONGITUDE_GPS. Copy them to the OG1
+# names LATITUDE/LONGITUDE (slope 1 = values unchanged) so the coordinate QC and
+# downstream steps below find them. This is done here, before anything reads them.
+  - name: Correct Values
+    parameters:
+      target_variable: LATITUDE_GPS
+      output_as: LATITUDE
+      append_description: Renamed from LATITUDE_GPS.
+    diagnostics: false
+
+  - name: Correct Values
+    parameters:
+      target_variable: LONGITUDE_GPS
+      output_as: LONGITUDE
+      append_description: Renamed from LONGITUDE_GPS.
+    diagnostics: false
+
 
 # ===========================================================
 #                  LATITUDE / LONGITUDE
@@ -236,25 +253,27 @@ steps:
 # far enough out to be nonsense. Note there is deliberately NO spike test here:
 # BBP spikes are individual particles/aggregates, i.e. real signal, and the
 # Isolate BBP Spikes step below separates them rather than discarding them.
-# The BBP from Beta step writes its output back over BBP700, so these flags stay
-# attached to the converted variable.
+# The BBP from Beta step converts BETA_BACKSCATTERING700 into BBP700 and carries
+# these flags across to the derived variable.
   - name: Apply QC
     parameters:
       qc_settings:
         range qc:
           variable_ranges:
-            BBP700:
+            BETA_BACKSCATTERING700:
               3: [0, 0.01, outside]     # Negative = dark-offset noise, high = suspect
               4: [-1.0e-4, 0.05, outside] # Physically absurd / sensor rail
         stuck value qc: # A frozen reading means a dead sensor
           variables:
-            BBP700: 3
+            BETA_BACKSCATTERING700: 3
     diagnostics: false
 
 # Convert the raw backscatter angle measurement (beta) into the particulate
 # backscattering coefficient BBP, using the scattering angle and chi factor.
   - name: BBP from Beta
     parameters:
+      apply_to: BETA_BACKSCATTERING700 # Churchill carries raw beta under this name
+      output_as: BBP700        # Derive BBP700 from it (Nelson stores beta as BBP700 directly)
       theta: 124               # Effective optical backscatter scattering angle (degrees)
       xfactor: 1.076           # Chi factor scaling particulate scattering to total backscatter
     diagnostics: false
@@ -269,144 +288,12 @@ steps:
     diagnostics: false
 
 # ===========================================================
-#                        OXYGEN
-# ===========================================================
-# Range test on the raw dissolved oxygen (MOLAR_DOXY, micromole/l), computed
-# on-board by the instrument: flag bad (4) outside 100-400. Kept as a sanity
-# check on the manufacturer's own value, ahead of the recomputed pipeline below.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        range qc:
-          variable_ranges:
-            MOLAR_DOXY:
-              4: [100, 400, outside]
-    diagnostics: false
-
-# Recompute MOLAR_DOXY from the raw phase rather than trust the instrument's
-# on-board value, so the pressure/salinity corrections and geometric time-shift
-# below are all applied consistently.
-  - name: "Derive Uncalibrated Phase"
-    parameters:
-      blue_phase_name: "BPHASE_DOXY"
-    diagnostics: false
-
-# Nelson has no optode temperature at all (no TEMP_DOXY / TEMP_VOLTAGE_DOXY),
-# so "Derive Optode Temperature" is skipped and CTD TEMP is used everywhere
-# below instead.
-
-# Pcoef1 for the aa4831 optode (RISC_DO_Optode calibration_sheets).
-  - name: "Phase Pressure Correction"
-    parameters:
-      optode_pressure_name: "PRES"
-      correction_coefficient: 0.1
-    diagnostics: false
-
-# Phase occasionally sticks at/near 0, which isn't a physically valid reading -
-# flag it bad ahead of the geometric shift below so it doesn't get interpolated in.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        range qc:
-          variable_ranges:
-            UNCAL_PHASE_DOXY_PCORR:
-              4: [1, -.inf, inside]
-    diagnostics: false
-
-# Geometrically shift the optode phase onto the CTD's dense sampling grid,
-# correcting for the water travel time between the two sensors. GLIDER_PITCH
-# isn't available, so this uses the fixed default lag from Woo & Gourcuff
-# (2023) rather than a per-profile derived one. TEMP is already on the CTD
-# grid (it comes from the CTD, not the optode), so it doesn't need shifting.
-  - name: "Shift Oxygen To CTD"
-    parameters:
-      shift_vars: ["UNCAL_PHASE_DOXY_PCORR"]
-      lag_seconds: 3.945
-      distance_cm: 90
-    diagnostics: false
-
-# PhaseCoef0-3 default to the identity (0, 1, 0, 0) in the calibration sheet -
-# this optode's calibration is entirely in the SVU foil coefficients below.
-  - name: "Derive Calibrated Phase"
-    parameters:
-      uncalibrated_phase_name: "UNCAL_PHASE_DOXY_PCORR_SHIFTED"
-      calib_coefficients: [0, 1, 0, 0]
-    diagnostics: false
-
-# Stern-Volmer-Uchida conversion using the manufacturer SVUFoilCoef0-6 for
-# optode SN 144 (RISC_DO_Optode/RISC_DO_Optode_scripts/calibration_sheets/
-# calibration_sheet_aa4831_397.py). TODO: confirm this is the right
-# calibration sheet for Nelson's optode - the notebook's glider/optode table
-# lists SN 144 against glider ID "397", not 646.
-  - name: "Derive Oxygen Concentration"
-    parameters:
-      method: "SVU"
-      temperature_name: "TEMP"
-      svu_coefficients: [2.67915e-03, 1.12428e-04, 2.29021e-06, 1.43603e+02, -2.08012e-01, -3.59303e+01, 2.82344e+00]
-    diagnostics: false
-
-  - name: "Molar DOXY Salinity Correction"
-    parameters:
-      salinity_name: "PRAC_SALINITY"
-      temperature_name: "TEMP"
-    diagnostics: false
-
-  - name: "Molar DOXY Pressure Correction"
-    parameters:
-      pressure_name: "PRES"
-      temperature_name: "TEMP"
-      molar_doxy_name: "MOLAR_DOXY_PSAL"
-      uncalibrated_phase_correction_applied: true
-    diagnostics: false
-
-  - name: Correct Values
-    parameters:
-      target_variable: MOLAR_DOXY_PSAL_PRES
-      output_as: MOLAR_DOXY_ADJUSTED
-      append_description: Renamed from MOLAR_DOXY_PSAL_PRES.
-    diagnostics: false
-
-# ===========================================================
-#                 PAR QC
-# ===========================================================
-# QC the PAR input to the quenching step below. Deliberately NO lower bound:
-# more than half the PAR record is negative, which is night and depth, not bad
-# data - and thomalla2018 builds its fl:bbp ratio from the night profiles, so
-# flagging those away would break the method. Only a physically impossible high
-# reading (solar max is around 4672) and a frozen sensor are flagged.
-  - name: Apply QC
-    parameters:
-      qc_settings:
-        range qc:
-          variable_ranges:
-            DOWNWELLING_PAR:
-              4: [-5, 4672, outside] # Absurd high, or a huge negative excursion
-        stuck value qc: # A frozen reading means a dead sensor
-          variables:
-            DOWNWELLING_PAR: 5
-        # Per-profile PAR shape test (La Forgia & Organelli 2025); needs
-        # PROFILE_NUMBER, so it runs after Find Profiles above.
-        PAR irregularity qc:
-          noise_equivalent_estimate: 3e-2 # Sensor noise-equivalent irradiance
-    diagnostics: false
-
-# This glider only logs PAR on upcasts, so downcasts (and gaps) have none.
-# Derive the two per-profile light-depth scalars the quenching step consumes -
-# the euphotic depth (ZEU) and the iPAR=15 isolume depth (Z_IPAR) - on the casts
-# that carry PAR, and interpolate each in time onto the casts that don't. This
-# fills the scalars the corrections actually need without reconstructing the
-# whole PAR field.
-  - name: Interpolate PAR
-    parameters:
-      par_var: DOWNWELLING_PAR
-      ipar_level: 15.0         # Isolume level (umol/m2/s) for Z_IPAR
-      interpolate_zeu: true    # Fill ZEU onto PAR-less casts (off: leave NaN)
-      interpolate_ipar: true   # Fill Z_IPAR onto PAR-less casts (off: leave NaN)
-    diagnostics: false         # Plots each scalar vs time: computed vs interpolated
-
-# ===========================================================
 #                 CHLOROPHYLL CORRECTIONS
 # ===========================================================
+# ALR carries no PAR, so the PAR QC / Interpolate PAR steps and the PAR-based
+# quenching methods are omitted. Quenching below uses the MLD-based 'xing2012'
+# method instead of Nelson/Churchill's PAR-dependent 'thomalla2018'.
+
 # Mixed layer depth (defaults: auto method -> DENSITY) - consumed by the
 # MLD-based quenching methods. Computed here so the method can be swapped
 # without reordering steps.
@@ -434,16 +321,14 @@ steps:
     parameters:
       apply_to: CHLA           # Variable to correct
       dark_value: null         # null -> compute the dark offset from the data
-      depth_threshold: 950     # Only use data below this depth to estimate the dark value
+      depth_threshold: 400     # Only use data below this depth to estimate the dark value
     diagnostics: false         # Plot the computed dark value and corrected profiles
 
-# Flag CHLA by DEPTH rather than by its own value: the top 2 m is unstable, so
+# Flag CHLA by DEPTH rather than by its own value: the top 5 m is unstable, so
 # mark it probably-bad-but-correctable (3) and everything deeper probably-good
 # (2). DEPTH itself is not flagged, and the Argo merge means the 2 can't
 # downgrade a 3/4 from the range or spike tests above. The quenching step below
-# then leaves the top 2 m out of its calculations while still correcting it.
-# Kept at 2 m (not 5): thomalla2018 needs at least one calc-eligible CHLA point
-# within its own 5 m surface-anchor window, so this can't reach/exceed that.
+# then leaves the top 5 m out of its calculations while still correcting it.
 # CHLA_ADJUSTED is flagged too, not just CHLA: Deep Correction has already run,
 # so the quenching step reads CHLA_ADJUSTED and gates on CHLA_ADJUSTED_QC.
   - name: Apply QC
@@ -452,20 +337,19 @@ steps:
         range qc:
           variable_ranges:
             DEPTH:
-              3: [0, 2, inside]
-              2: [0, 2, outside]
+              3: [0, 5, inside]
+              2: [0, 5, outside]
           flag_instead:
             DEPTH: [CHLA, CHLA_ADJUSTED]
     diagnostics: false
 
 # Second, a non-photochemical quenching (NPQ) correction. Near the surface,
 # daylight suppresses fluorescence, so chlorophyll reads artificially low. The
-# thomalla2018 method builds a per-night fluorescence:backscatter ratio profile
-# and applies it to the following day's profiles, so it needs the BBP and PAR
-# variables produced/loaded above.
+# xing2012 method extrapolates the fluorescence at the base of the mixed layer up
+# to the surface, so it needs only MLD (computed above) - no PAR - which suits ALR.
   - name: CHLA Quenching
     parameters:
-      method: thomalla2018
+      method: xing2012
     diagnostics: false
 
 # Re-run the range test on the corrected CHLA_ADJUSTED, in case the deep and
@@ -488,7 +372,7 @@ steps:
   - name: "Data Export"
     parameters:
       export_format: "netcdf"
-      output_path: "examples/data/OG1/Nelson_646_R_Processed.nc"
+      output_path: "examples/data/OG1/ALR_4_649_Processed.nc"
 
 # Report assembly
   - name: Write Data Report (Python)

@@ -114,7 +114,7 @@ class ApplyQC(BaseStep):
         raises
         ------
         KeyError
-            If no QC operations are specified, if requested QC tests are invalid, or esssential variables are missing.
+            If no QC operations are specified, or if requested QC tests are invalid.
         ValueError
             If no data is found in context.
         """
@@ -134,7 +134,7 @@ class ApplyQC(BaseStep):
 
         # Check if the data is in the context
         self.check_data()
-        data = self.context["data"].copy(deep=True)
+        full_data = self.context["data"]
 
         # Try and fetch the qc history from context and update it
         qc_history = self.context.setdefault("qc_history", {})
@@ -153,15 +153,24 @@ class ApplyQC(BaseStep):
                 all_required_variables.update(test.required_variables)
                 test_qc_outputs_cols.update(test.qc_outputs)
             #   Check that the required variables for the test are in the dataset.
-            #   Use data.variables (data vars + coordinates), not data.keys() (data
+            #   Use full_data.variables (data vars + coordinates), not .keys() (data
             #   vars only), so a required variable stored as a coordinate (e.g. TIME,
             #   LATITUDE, LONGITUDE) is not falsely reported as missing.
-            present = set(data.variables)
+            present = set(full_data.variables)
             if not set(all_required_variables).issubset(present):
-                raise KeyError(
-                    f"[Apply QC] The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
+                self.halt(
+                    f"The data is missing variables: ({set(all_required_variables) - present}) which are required for running QC '{test.qc_name}'."
                     f" Make sure that the variables are present in the data, or remove tests from the order."
                 )
+
+        # Deep-copy only what this call touches: every test's required_variables
+        # (each test self-scopes to these, including dynamic tests above), plus
+        # the QC output columns themselves and the variable each flags (needed to
+        # build masks for outputs that don't exist yet, see mia_qc/base below).
+        subset_names = set(all_required_variables) | set(test_qc_outputs_cols)
+        subset_names.update(var[:-3] for var in test_qc_outputs_cols)
+        subset_vars = [name for name in subset_names if name in full_data.variables]
+        data = full_data[subset_vars].copy(deep=True)
         # Convert data to polars for fast processing
         # Fetch existing flags from the data and create a place to store them
         existing_flags = [
@@ -176,9 +185,13 @@ class ApplyQC(BaseStep):
             [var for var in data.data_vars if var.endswith("_QC")]
         ) - set(test_qc_outputs_cols)
         if any(other_existing_qc):
-            self.log(f"Found QC columns for untested values: {other_existing_qc}")
-            self.log(
-                "These columns will not be modified and are not subject to this step."
+            # File-only: this set can be large and repeats every QC step.
+            self.logger.info(
+                "[%s] %s pre-existing QC column(s) left untouched by this step: %s",
+                self.name,
+                len(other_existing_qc),
+                ", ".join(sorted(other_existing_qc)),
+                extra={"console": False},
             )
 
         # Initialize the missing flag columns
@@ -234,8 +247,17 @@ class ApplyQC(BaseStep):
                 attrs["flag_meanings"] = (
                     "NO_QC, GOOD, PROB_GOOD, PROB_BAD, BAD, VALUE_CHANGED, NOT_USED, NOT_USED, ESTIMATED, MISSING"
                 )
-                attrs["long_name"] = f"{parent_attrs['long_name']} quality flag"
-                attrs["standard_name"] = f"{parent_attrs['standard_name']}_flag"
+                parent_long_name = parent_attrs.get("long_name")
+                if parent_long_name is None:
+                    self.log_warn(
+                        f"'{flagged_var[:-3]}' has no 'long_name' attribute; QC flag variable "
+                        f"'{flagged_var}' will be missing its 'long_name' too."
+                    )
+                else:
+                    attrs["long_name"] = f"{parent_long_name} quality flag"
+                parent_standard_name = parent_attrs.get("standard_name")
+                if parent_standard_name is not None:
+                    attrs["standard_name"] = f"{parent_standard_name}_flag"
                 attr_test = qc_qc_name.replace(" ", "_").lower()
                 attrs[f"{attr_test}_flag_cts"] = json.dumps(
                     {i: int(np.sum(var_flags.to_numpy() == i)) for i in range(10)}
@@ -277,7 +299,10 @@ class ApplyQC(BaseStep):
                 self.flag_store[flag_column].to_numpy(),
             )
             data[flag_column].attrs = self.flag_store[flag_column].attrs.copy()
-        self.context["data"] = data
+        # data is a subset of context["data"]; merge rather than replace so
+        # variables outside the subset (e.g. other tests' untouched _QC columns)
+        # aren't dropped.
+        self.context["data"].update(data)
         self.context["qc_history"] = qc_history
 
         return self.context

@@ -27,6 +27,14 @@ Sits just above ERROR so it always surfaces, and is rendered as "STOP" in logs.
 """
 logging.addLevelName(STOP, "STOP")
 
+SEVERE = logging.WARNING + 5
+"""Custom log level for a step that failed but was skipped (continue_on_step_fail).
+
+Sits between WARNING and ERROR, and is rendered amber (vs. WARNING's yellow) to
+stand out from ordinary warnings.
+"""
+logging.addLevelName(SEVERE, "SEVERE")
+
 
 def _supports_color(stream):
     """Whether ANSI colour is safe to emit on ``stream``.
@@ -46,7 +54,7 @@ def _supports_color(stream):
 
 class ColorFormatter(logging.Formatter):
     """Formatter that colours records by level on the console (STOP/ERROR red,
-    WARNING yellow).
+    SEVERE amber, WARNING yellow).
 
     Colour is only emitted when the target stream is an interactive terminal
     that supports it (see :func:`_supports_color`), so redirected output and
@@ -56,23 +64,44 @@ class ColorFormatter(logging.Formatter):
 
     _RESET = "\033[0m"
     _RED = "\033[31m"
+    _AMBER = "\033[38;5;202m"
     _YELLOW = "\033[33m"
+    _GREY = "\033[90m"
+
+    # Colours a record may request via ``extra={"color": ...}``; unknown names
+    # leave it uncoloured.
+    _NAMED_COLORS = {
+        "grey": _GREY,
+        "gray": _GREY,
+        "red": _RED,
+        "amber": _AMBER,
+        "yellow": _YELLOW,
+    }
 
     def __init__(self, *args, stream=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._use_color = _supports_color(stream if stream is not None else sys.stderr)
 
-    def _color_for(self, levelno):
-        """Return the ANSI colour for a level, or None to leave it uncoloured."""
-        if levelno >= logging.ERROR:
+    def _color_for(self, record):
+        """Return the ANSI colour for a record, or None to leave it uncoloured.
+
+        An explicit ``color`` on the record wins; otherwise colour is chosen by
+        level (ERROR/STOP red, SEVERE amber, WARNING yellow).
+        """
+        requested = getattr(record, "color", None)
+        if requested:
+            return self._NAMED_COLORS.get(requested)
+        if record.levelno >= logging.ERROR:
             return self._RED
-        if levelno >= logging.WARNING:
+        if record.levelno >= SEVERE:
+            return self._AMBER
+        if record.levelno >= logging.WARNING:
             return self._YELLOW
         return None
 
     def format(self, record):
         message = super().format(record)
-        color = self._color_for(record.levelno) if self._use_color else None
+        color = self._color_for(record) if self._use_color else None
         if color:
             return f"{color}{message}{self._RESET}"
         return message

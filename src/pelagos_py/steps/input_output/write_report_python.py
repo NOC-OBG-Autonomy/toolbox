@@ -25,6 +25,7 @@ so no external toolchain (LaTeX, Sphinx) is required to produce the PDF.
 #### Mandatory imports ####
 from pelagos_py.steps.base_step import BaseStep, register_step
 import pelagos_py.utils.diagnostics as di
+import pelagos_py.utils.palettes as palettes
 
 #### Custom imports ####
 from fpdf import FPDF
@@ -48,8 +49,9 @@ import yaml
 from importlib.metadata import version, PackageNotFoundError
 import matplotlib.pyplot as plt
 import xarray as xr
-from tqdm import tqdm
 import numpy as np
+
+from pelagos_py.utils.console import progress_bar
 
 
 #   The core PDF fonts are latin-1 only. Map the symbols we expect to plain
@@ -318,6 +320,7 @@ class ReportPDF(FPDF):
         pipeline_name=None,
         pipeline_description=None,
         track_map_path=None,
+        logo_path=None,
     ):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.report_title = title
@@ -326,13 +329,20 @@ class ReportPDF(FPDF):
         self.pipeline_name = pipeline_name
         self.pipeline_description = pipeline_description
         self.track_map_path = track_map_path
+        self.logo_path = logo_path or LOGO_PATH
         #   A roomy bottom margin keeps body content clear of the page-number
         #   footer (which sits ~15 mm from the foot).
         self.set_auto_page_break(auto=True, margin=20)
         self.set_title(sanitize(title))
-        #   Table-of-contents entries (title, page number, internal link id),
-        #   filled in by :meth:`section_heading` as each section is written.
-        self.toc = []
+        #   One-shot: skip the next add_page() so a section can reuse an already
+        #   opened page (see run()'s contents placeholder).
+        self._skip_next_add_page = False
+
+    def add_page(self, *args, **kwargs) -> None:
+        if self._skip_next_add_page:
+            self._skip_next_add_page = False
+            return
+        super().add_page(*args, **kwargs)
 
     def header(self) -> None:
         #   Running header on every page except the title page.
@@ -360,24 +370,35 @@ class ReportPDF(FPDF):
         self.add_page()
 
         #   NOC logo, centred near the top. Kept small to leave room for the
-        #   title-page track map below.
-        self.ln(16)
-        logo_w = 20
-        if os.path.exists(LOGO_PATH):
+        #   title-page track map below. Spacing here is trimmed as tight as looks
+        #   reasonable: a long step list (in _steps_abstract) can otherwise push
+        #   the title page over onto a second page, which orphans the ToC.
+        #   Guarded by height rather than width: a non-square logo can be as wide
+        #   as it likes (bounded by logo_max_w) without shifting the page layout.
+        self.ln(10)
+        logo_h = 20
+        logo_max_w = 60
+        if os.path.exists(self.logo_path):
             try:
-                self.image(LOGO_PATH, x=(self.w - logo_w) / 2, w=logo_w)
-                self.ln(logo_w + 6)
+                info = self.image(
+                    self.logo_path,
+                    x=(self.w - logo_max_w) / 2,
+                    w=logo_max_w,
+                    h=logo_h,
+                    keep_aspect_ratio=True,
+                )
+                self.ln(info["rendered_height"] + 2)
             except Exception:  # noqa: BLE001 - logo is decorative, never fatal
-                self.ln(16)
+                self.ln(10)
         else:
-            self.ln(16)
+            self.ln(10)
 
         self.set_font("Times", "B", 28)
         self.multi_cell(
             0, 12, sanitize(self.report_title), align="C",
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
-        self.ln(6)
+        self.ln(4)
         if self.report_subtitle:
             self.set_font("Times", "", 16)
             self.multi_cell(
@@ -387,7 +408,7 @@ class ReportPDF(FPDF):
 
         #   Pipeline name and description, straight from the configuration.
         if self.pipeline_name:
-            self.ln(8)
+            self.ln(5)
             self.set_font("Times", "I", 14)
             self.multi_cell(
                 0, 8, sanitize(self.pipeline_name), align="C",
@@ -404,7 +425,7 @@ class ReportPDF(FPDF):
         #   page still fits; omitted silently when no map could be built. The map
         #   is square (1:1), so default to that aspect when it can't be read.
         if self.track_map_path and os.path.exists(self.track_map_path):
-            self.ln(6)
+            self.ln(4)
             aspect = _image_aspect(self.track_map_path, default=1.0)
             map_w, max_h = 130, 72
             if map_w * aspect > max_h:
@@ -412,12 +433,12 @@ class ReportPDF(FPDF):
             self.image(self.track_map_path, x=(self.w - map_w) / 2, w=map_w)
             self.ln(2)
 
-        self.ln(8)
+        self.ln(5)
         self._steps_abstract()
 
         #   Provenance: run date, pelagos-py version, runtime environment and a
         #   project link, grouped together near the foot of the title page.
-        self.ln(10)
+        self.ln(6)
         stamp = long_date(datetime.now(timezone.utc))
         self.set_font("Times", "", 12)
         self.multi_cell(
@@ -466,9 +487,10 @@ class ReportPDF(FPDF):
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         self.ln(1)
-        self.set_font("Times", "", 11)
+        #   Kept small so a long step list still fits the title page.
+        self.set_font("Times", "", 9)
         self.multi_cell(
-            0, 5.5, sanitize(listing), align="C",
+            0, 4.5, sanitize(listing), align="C",
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
 
@@ -483,28 +505,10 @@ class ReportPDF(FPDF):
         self.ln(2)
 
     def section_heading(self, text: str) -> None:
-        #   Level-2 heading that also records an internal link for the index, so
-        #   each section is listed with its page number. Call once per section.
-        link = self.add_link()
-        self.set_link(link, page=self.page_no())
-        self.toc.append((text, self.page_no(), link))
+        #   Level-2 heading that also registers a document section (start_section)
+        #   so it lands on the contents page and PDF bookmarks. Once per section.
+        self.start_section(text, level=0)
         self.h2(text)
-
-    def contents(self) -> None:
-        #   Render the recorded sections as a compact, linkable contents list.
-        if not self.toc:
-            return
-        self.set_font("Times", "", 9)
-        page_w = 14  #   narrow right-hand column for the page number
-        for title, page, link in self.toc:
-            self.set_text_color(*_LINK_TEAL)
-            self.cell(self.epw - page_w, 5, sanitize(title), link=link)
-            self.set_text_color(0)
-            self.cell(
-                page_w, 5, str(page), align="R", link=link,
-                new_x=XPos.LMARGIN, new_y=YPos.NEXT,
-            )
-        self.ln(2)
 
     def h3(self, text: str) -> None:
         self.ln(1)
@@ -982,6 +986,24 @@ def variable_index_rows(data: xr.Dataset) -> list:
     return rows
 
 
+def contents_page(pdf: ReportPDF, outline) -> None:
+    #   Fills the reserved contents page from fpdf's document outline (populated
+    #   by section_heading via start_section) once page numbers are known.
+    pdf.h2("Contents")
+    pdf.set_font("Times", "", 9)
+    page_w = 14  #   narrow right-hand column for the page number
+    for section in outline:
+        link = pdf.add_link(page=section.page_number)
+        pdf.set_text_color(*_LINK_TEAL)
+        pdf.cell(pdf.epw - page_w, 5, sanitize(section.name), link=link)
+        pdf.set_text_color(0)
+        pdf.cell(
+            page_w, 5, str(section.page_number), align="R", link=link,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
+    pdf.ln(2)
+
+
 def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     #   Closing index page: pelagos-py credit, a linked contents list, then the
     #   QC flag glossary, variable index and glider global attributes.
@@ -1003,10 +1025,6 @@ def index_section(pdf: ReportPDF, data: xr.Dataset) -> None:
     pdf.ln(8)
 
     pdf.section_heading("Index")
-
-    #   Contents: each report section with its page number, linked in the PDF.
-    pdf.h3("Contents")
-    pdf.contents()
 
     #   QC flag glossary: translate the flag values used throughout the report.
     pdf.h3("QC flag glossary")
@@ -1060,60 +1078,54 @@ _MAP_START = "#9fe0a0"
 
 #   Cross-section panels (PRES vs TIME, coloured by a variable). Each panel
 #   names the variable to colour by (first match wins, so OG1/lower-case and
-#   BBP700/BBP532 fallbacks can be listed in preference order) and the exact
-#   colourmap stops (low value -> high value; not reversed) used to build a
-#   LinearSegmentedColormap. ``special`` flags BBP, which is drawn largest-on-top
-#   with smaller markers so its sharp spikes surface rather than hide behind
-#   ordinary points.
+#   BBP700/BBP532 fallbacks can be listed in preference order) and pulls its
+#   colourmap stops from the shared ``palettes`` module. ``special`` flags BBP,
+#   drawn largest-on-top with smaller markers so its sharp spikes surface rather
+#   than hide behind ordinary points.
 _CROSS_SECTION_PANELS = (
     {
         "label": "Temperature",
         "candidates": ("TEMP", "TEMPERATURE", "temp"),
-        "stops": [
-            "#1b1c6e", "#365292", "#5286b7", "#8db4c4", "#dbe5cd",
-            "#f1d8b4", "#d9997e", "#c05e4c", "#a0372b", "#811910",
-        ],
+        "stops": palettes.SEQUENTIAL["temperature"],
     },
     {
         "label": "Salinity",
         "candidates": ("PRAC_SALINITY", "ABS_SALINITY", "PSAL", "SALINITY", "salinity"),
-        "stops": [
-            "#f9e8b1", "#f1c38f", "#e8a074", "#db7c5f", "#cb5c58",
-            "#b2425c", "#943061", "#732460", "#511c53", "#321340",
-        ],
+        "stops": palettes.SEQUENTIAL["salinity"],
     },
     {
         "label": "Density",
         "candidates": ("DENSITY", "density", "SIGMA0", "SIGMA_THETA", "POTDENS"),
-        "stops": [
-            "#e6f1f7", "#c4d8e8", "#a6bed9", "#8ba4c9", "#7489b8", "#636c9f",
-            "#595388", "#55406e", "#4e3055", "#3f2040", "#2e1226",
-        ],
+        "stops": palettes.SEQUENTIAL["density"],
     },
     {
         "label": "Oxygen",
-        "candidates": ("MOLAR_DOXY", "molar_doxy", "DOXY", "molar_deoxy"),
-        "stops": [
-            "#400000", "#5c0000", "#780000", "#808080", "#8c8c8c", "#979797",
-            "#a3a3a3", "#aeaeae", "#baba10", "#dbdb0a", "#fdfd00",
-        ],
+        "candidates": (
+            "MOLAR_DOXY_ADJUSTED",  #   renamed fully corrected output, if the config adds that step
+            "MOLAR_DOXY_PSAL_PRES",  #   fully corrected output of the oxygen processing chain
+            "MOLAR_DOXY_PSAL",
+            "MOLAR_DOXY",
+            "molar_doxy",
+            "DOXY",
+            "molar_deoxy",
+        ),
+        "stops": palettes.SEQUENTIAL["oxygen"],
     },
     {
         "label": "Chlorophyll",
         "candidates": ("CHLA_ADJUSTED", "CHLA", "chla_adjusted", "CHLOROPHYLL"),
-        "stops": [
-            "#182548", "#2c5398", "#4a88a4", "#87b8b5", "#dae4da",
-            "#e6d992", "#a8ab3e", "#56872e", "#285932", "#1b2617",
-        ],
+        "stops": palettes.SEQUENTIAL["chlorophyll"],
     },
     {
         "label": "Backscatter",
         "candidates": ("BBP700", "BBP532", "BBP", "bbp"),
         "special": "bbp",
-        "stops": [
-            "#cccccc", "#737373", "#000000", "#1335f5", "#3f8df7",
-            "#67dffb", "#a1fc4e", "#f8d748", "#ef8733", "#ea3323",
-        ],
+        "stops": palettes.SEQUENTIAL["backscatter"],
+    },
+    {
+        "label": "Downwelling PAR",
+        "candidates": ("DOWNWELLING_PAR", "downwelling_par", "PAR"),
+        "stops": palettes.SEQUENTIAL["solar"],
     },
 )
 
@@ -1295,11 +1307,19 @@ def qc_hist(
     hislim=range(10),
     bins=None,
     ext=".png",
+    source_all_nan: bool = None,
+    flag_all_nan: bool = None,
 ) -> str:
     #   QC histogram figure: left axis plots the QC variable's parent series,
     #   right axis bins each flag type labelled with its point count. hislim is
     #   the schema's flags (default Argo 0-9); returns the saved figure path.
+    #   source_all_nan/flag_all_nan let a caller that already scanned the arrays
+    #   (e.g. make_plots) pass the result in rather than scanning again here.
     var_source = var[:-3]  #   TEMP_QC --> TEMP
+    if source_all_nan is None:
+        source_all_nan = bool(np.all(np.isnan(data[var_source])))
+    if flag_all_nan is None:
+        flag_all_nan = bool(np.all(np.isnan(data[var])))
 
     #   Short and wide so three plots fit on a page (see make_plots).
     fig, axs = plt.subplots(ncols=2, figsize=(8, 3.2), layout="constrained")
@@ -1313,7 +1333,7 @@ def qc_hist(
 
     #   Plot the source variable using xarray.plot for speed.
     #   If all NaN, clarify that on the plot.
-    if np.all(np.isnan(data[var_source])):
+    if source_all_nan:
         axs[0].text(
             0.2, 0.5, f"Data ({var_source}) are NaN", transform=axs[0].transAxes
         )
@@ -1329,7 +1349,7 @@ def qc_hist(
         axs[0].set_ylabel(var_source)
     axs[0].set_title("")
 
-    if np.all(np.isnan(data[var])):
+    if flag_all_nan:
         axs[1].text(0.2, 0.5, f"Flags ({var}) are NaN", transform=axs[1].transAxes)
     else:
         data[var].plot.hist(
@@ -1360,6 +1380,7 @@ def make_plots(
     pdf: ReportPDF,
     data: xr.Dataset,
     outdir: str,
+    bar=None,
 ) -> None:
     #   Write a QC histogram per numeric QC variable. xarray.plot keeps the
     #   million-point series fast to render.
@@ -1384,22 +1405,33 @@ def make_plots(
     dataset_id = data.attrs.get("dataset_id")
     dataset_label = dataset_id if dataset_id != UNKNOWN_DATASET_ID else None
 
-    for var in tqdm(
-        qc_vars,
-        colour="green",
-        desc=f"\033[97mProgress \033[0m",
-        unit="vars",
-    ):
+    #   Bar arrives at 10%; jump to 20% as the loop begins, then split the
+    #   remaining 80% across the QC variables.
+    if bar is not None:
+        bar.update(10)
+    emitted = 0
+    for i, var in enumerate(qc_vars, start=1):
         var_source = var[:-3]  #   TEMP_QC --> TEMP
+        #   Scan each array's NaN-ness once and reuse it in qc_hist, rather than
+        #   scanning both again inside there.
+        source_all_nan = bool(np.all(np.isnan(data[var_source])))
+        flag_all_nan = bool(np.all(np.isnan(data[var])))
         #   When both the measurement and its flags are entirely NaN there is
         #   nothing to plot. Note it in one line and skip so more useful plots
         #   fit on the page.
-        if np.all(np.isnan(data[var_source])) and np.all(np.isnan(data[var])):
+        if source_all_nan and flag_all_nan:
             pdf.body(f"{var_source} and {var} are all NaN.", align="C")
-            continue
-        # Any form of scatter takes ~30 sec, stick with xarray.plot for now (no colorbars, alternative color schemes)
-        hist_img = qc_hist(data, outdir, var, dataset_label=dataset_label)
-        pdf.image_full(hist_img, aspect=3.2 / 8)
+        else:
+            # Any form of scatter takes ~30 sec, stick with xarray.plot for now (no colorbars, alternative color schemes)
+            hist_img = qc_hist(
+                data, outdir, var, dataset_label=dataset_label,
+                source_all_nan=source_all_nan, flag_all_nan=flag_all_nan,
+            )
+            pdf.image_full(hist_img, aspect=3.2 / 8)
+        if bar is not None:
+            target = round(80 * i / len(qc_vars))
+            bar.update(target - emitted)
+            emitted = target
 
 
 def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> str:
@@ -1433,42 +1465,14 @@ def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> st
     #   matplotlib date numbers for the shared X axis (NaT -> NaN, ignored).
     x = mdates.date2num(time)
 
-    panels = _CROSS_SECTION_PANELS
-    #   A4-portrait proportions, trimmed a little in height so the "Cross Section
-    #   Plots" heading and the figure sit together on one page. constrained_layout
-    #   lines up every panel with its left profile strip and right colourbar.
-    fig = plt.figure(figsize=(8.27, 10.3), layout="constrained")
-    #   Per row: [narrow profile strip] [main cross-section] [thin colourbar].
-    gs = fig.add_gridspec(len(panels), 3, width_ratios=[0.22, 1.0, 0.045])
-
-    main_axes = []
-    for i, panel in enumerate(panels):
-        ax_prof = fig.add_subplot(gs[i, 0])
-        #   Main panels share the TIME X axis; profile shares the (inverted) PRES
-        #   Y axis with its own main panel.
-        ax_main = fig.add_subplot(
-            gs[i, 1], sharex=main_axes[0] if main_axes else None, sharey=ax_prof
-        )
-        cax = fig.add_subplot(gs[i, 2])
-        main_axes.append(ax_main)
-
-        cmap = LinearSegmentedColormap.from_list(
-            f"xsec_{panel['label'].lower()}", panel["stops"]
-        )
-
+    #   Resolve which panels actually have usable data (variable present in the
+    #   dataset, and not entirely masked out by QC). Panels without any are
+    #   omitted from the figure entirely, rather than drawn as an empty "not
+    #   available" placeholder - e.g. no salinity derived, or no oxygen sensor.
+    resolved_panels = []
+    for panel in _CROSS_SECTION_PANELS:
         cvar = _first_present(data, panel["candidates"])
         if cvar is None:
-            #   Keep the panel (so the layout is fixed at 6 rows) but note the gap.
-            ax_main.text(
-                0.5, 0.5, f"{panel['label']} not available",
-                ha="center", va="center", transform=ax_main.transAxes,
-                fontsize=8, color="0.4",
-            )
-            ax_main.tick_params(labelleft=False)
-            ax_prof.tick_params(labelsize=6)
-            ax_prof.set_ylabel(_var_label(data, pres_name, pres_name), fontsize=7)
-            ax_prof.set_xlabel(panel["label"], fontsize=6)
-            cax.axis("off")
             continue
 
         c = np.asarray(data[cvar].values, dtype=float).ravel()[:n][idx]
@@ -1481,6 +1485,36 @@ def cross_section_figure(data: xr.Dataset, outdir: str, ext: str = ".png") -> st
         if qc_name in data.variables:
             qc = np.asarray(data[qc_name].values, dtype=float).ravel()[:n][idx]
             c = np.where(np.isin(qc, _CS_ALLOWED_QC_FLAGS), c, np.nan)
+
+        if not np.isfinite(c).any():
+            continue
+
+        resolved_panels.append((panel, cvar, c))
+
+    if not resolved_panels:
+        return None
+
+    #   A4-portrait proportions, trimmed a little in height so the "Cross Section
+    #   Plots" heading and the figure sit together on one page. constrained_layout
+    #   lines up every panel with its left profile strip and right colourbar.
+    fig = plt.figure(figsize=(8.27, 10.3), layout="constrained")
+    #   Per row: [narrow profile strip] [main cross-section] [thin colourbar].
+    gs = fig.add_gridspec(len(resolved_panels), 3, width_ratios=[0.22, 1.0, 0.045])
+
+    main_axes = []
+    for i, (panel, cvar, c) in enumerate(resolved_panels):
+        ax_prof = fig.add_subplot(gs[i, 0])
+        #   Main panels share the TIME X axis; profile shares the (inverted) PRES
+        #   Y axis with its own main panel.
+        ax_main = fig.add_subplot(
+            gs[i, 1], sharex=main_axes[0] if main_axes else None, sharey=ax_prof
+        )
+        cax = fig.add_subplot(gs[i, 2])
+        main_axes.append(ax_main)
+
+        cmap = LinearSegmentedColormap.from_list(
+            f"xsec_{panel['label'].lower()}", panel["stops"]
+        )
 
         #   Robust colour limits: percentiles, not raw min/max, so sharp spikes
         #   don't blow out the scale. Guard the all-NaN case.
@@ -1552,7 +1586,7 @@ def cross_section_section(pdf: ReportPDF, data: xr.Dataset, outdir: str) -> None
     pdf.section_heading("Cross Section Plots")
     img = cross_section_figure(data, outdir)
     if img is None:
-        pdf.body("No suitable TIME/PRES data available for cross-section plots.")
+        pdf.body("No suitable TIME/PRES/variable data available for cross-section plots.")
         return
     #   Cap the figure to the space left below the heading so the two stay on one
     #   page (the figure is near-A4 height, so a full-width placement would
@@ -1613,6 +1647,8 @@ class WriteDataReportPython(BaseStep):
         Include the logfile section. Default ``True``.
     show_index : bool, optional
         Include the closing index section. Default ``True``.
+    logo_path : str, optional
+        Path to a logo image for the title page. Defaults to the NOC logo.
 
     Examples
     --------
@@ -1705,6 +1741,11 @@ class WriteDataReportPython(BaseStep):
                 "variable index and glider information."
             ),
         },
+        "logo_path": {
+            "type": str,
+            "default": None,
+            "description": "Path to a logo image for the title page. Defaults to the NOC logo.",
+        },
     }
 
     def run(self) -> xr.DataArray:
@@ -1773,8 +1814,24 @@ class WriteDataReportPython(BaseStep):
                 pipeline_name=glob_params.get("name"),
                 pipeline_description=glob_params.get("description"),
                 track_map_path=track_map_path,
+                logo_path=self.parameters.get("logo_path"),
             )
             pdf.title_page()
+
+            #   Reserve a page for the contents, filled at output time
+            #   (contents_page) once section page numbers are known; sections
+            #   below start on page 3. allow_extra_pages lets a long list spill
+            #   over without erroring.
+            if self.parameters.get("show_index", True):
+                #   Fresh page first: insert_toc_placeholder starts the ToC at the
+                #   current position, else it lands on the tail of the title page.
+                pdf.add_page()
+                pdf.insert_toc_placeholder(
+                    contents_page, pages=1, allow_extra_pages=True
+                )
+                #   Let the first section reuse the fresh page the placeholder
+                #   leaves us on rather than adding a blank one.
+                pdf._skip_next_add_page = True
 
             #   Each section is optional and defaults on. Lead with the
             #   cross-section plots (the headline view of the mission), then the
@@ -1782,9 +1839,15 @@ class WriteDataReportPython(BaseStep):
             #   per-step diagnostics, QC summary, plots and logs. Close with a
             #   pelagos-py credit and an index (QC flag glossary, variable index
             #   and glider information).
+            #   One bar for the whole build: cross-sections to 10%, QC-image loop
+            #   fills 20 -> 100%; the quick middle sections read as the 10 -> 20 jump.
+            report_bar = progress_bar(
+                total=100, desc="", unit="%", step_name=self.name
+            )
+
             if self.parameters.get("show_cross_section_plots", True):
-                self.log("Generating cross-section plots.")
                 cross_section_section(pdf, data, outdir=fig_dir)
+                report_bar.update(10)
 
             if (
                 self.parameters.get("show_format_check", True)
@@ -1806,8 +1869,8 @@ class WriteDataReportPython(BaseStep):
                 qc_section(pdf, data)
 
             if self.parameters.get("show_qc_plots", True):
-                self.log("Generating images.")
-                make_plots(pdf, data, outdir=fig_dir)
+                make_plots(pdf, data, outdir=fig_dir, bar=report_bar)
+            report_bar.close()
 
             if self.parameters.get("show_logs", True):
                 log_path = odir + self.context["global_parameters"]["log_file"]
