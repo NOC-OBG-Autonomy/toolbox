@@ -17,7 +17,7 @@
 """Console presentation for pipeline runs.
 
 Every line is ``time  step-name  detail`` (colour by severity: warnings yellow,
-errors/STOP red), with countable loops shown as a live progress bar. The console
+SEVERE amber, errors/STOP red), with countable loops shown as a live progress bar. The console
 handler reshapes each record and writes through :func:`tqdm.write` so log lines
 and a live bar coexist; :func:`progress_bar` is the uniform bar style.
 """
@@ -29,10 +29,11 @@ import time
 
 from tqdm import tqdm
 
-from pelagos_py.utils.log_levels import _supports_color
+from pelagos_py.utils.log_levels import SEVERE, _supports_color
 
 _RESET = "\033[0m"
 _RED = "\033[31m"
+_AMBER = "\033[38;5;202m"
 _YELLOW = "\033[33m"
 
 # Width the step/process name is padded to, so the detail columns line up.
@@ -75,7 +76,8 @@ class ConsoleFormatter(logging.Formatter):
     """Reshape a record to ``time  name  message`` and colour it by severity.
 
     Name comes from the ``[...]`` tag when present, else the logger name. WARNING
-    yellow, ERROR/STOP red. Pass ``extra={"raw": True}`` to emit a line verbatim.
+    yellow, SEVERE amber, ERROR/STOP red. Pass ``extra={"raw": True}`` to emit a
+    line verbatim.
     """
 
     def __init__(self, *args, stream=None, **kwargs):
@@ -102,6 +104,8 @@ class ConsoleFormatter(logging.Formatter):
         # Info stays the terminal default; only warnings/errors colour.
         if record.levelno >= logging.ERROR:
             return f"{_RED}{line}{_RESET}"
+        if record.levelno >= SEVERE:
+            return f"{_AMBER}{line}{_RESET}"
         if record.levelno >= logging.WARNING:
             return f"{_YELLOW}{line}{_RESET}"
         return line

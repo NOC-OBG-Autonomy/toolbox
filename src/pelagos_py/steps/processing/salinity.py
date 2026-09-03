@@ -33,7 +33,8 @@ import gsw
 
 
 def running_average_nan(arr: np.ndarray, window_size: int) -> np.ndarray:
-    """Symmetric running-average mean that ignores NaNs. ``window_size`` must be odd.
+    """
+    Symmetric running-average mean that ignores NaNs. ``window_size`` must be odd.
 
     :meta private:
     """
@@ -41,14 +42,15 @@ def running_average_nan(arr: np.ndarray, window_size: int) -> np.ndarray:
     if window_size % 2 == 0:
         raise ValueError("Window size must be odd for symmetry.")
 
-    pad_size = window_size // 2
-    padded = np.pad(arr, pad_size, mode="reflect")
+    pad_size = window_size // 2  # Symmetric padding
+    padded = np.pad(arr, pad_size, mode="reflect")  # Edge handling
 
     kernel = np.ones(window_size)
+    # Compute weighted sums while ignoring NaNs
     sum_vals = np.convolve(np.nan_to_num(padded), kernel, mode="valid")
     count_vals = np.convolve(~np.isnan(padded), kernel, mode="valid")
 
-    # NaN out empty windows to avoid uninitialised-memory warnings
+    # Compute the moving average, handling NaNs properly and preventing uninitialised memory warnings
     avg = np.divide(
         sum_vals,
         count_vals,
@@ -62,13 +64,19 @@ def running_average_nan(arr: np.ndarray, window_size: int) -> np.ndarray:
 def compute_optimal_lag(
     profile_data, filter_window_size, time_col, return_cost_data=False
 ):
-    """Find the optimal CNDC-TEMP time lag (seconds) for one profile by minimising
-    std(salinity - running-average salinity). With ``return_cost_data`` also returns
-    a dict of intermediate arrays for diagnostics.
+    """
+    Find the optimal conductivity-temperature time lag (seconds) for one profile.
+
+    Trials lags from -2 s to +2 s in 0.1 s steps and returns the lag that minimises
+    the standard deviation of (salinity - running-average salinity), i.e. the lag
+    that suppresses salinity spiking. When ``return_cost_data`` is True a second
+    dict of intermediate arrays is also returned for diagnostics. See
+    :meth:`AdjustSalinity.correct_ct_lag` for the full method and references.
 
     :meta private:
     """
 
+    # remove any rows where conductivity is bad (nan)
     profile_data = profile_data[[time_col, "CNDC", "PRES", "TEMP"]].dropna(
         dim="N_MEASUREMENTS", subset=["CNDC"]
     )
@@ -78,46 +86,52 @@ def compute_optimal_lag(
             return np.nan, None
         return np.nan
 
-    # Elapsed time in seconds from the start of the profile
+    # Find the elapsed time in seconds from the start of the profile
     t0 = profile_data[time_col].values[0]
     profile_data["ELAPSED_TIME[s]"] = (profile_data[time_col] - t0).dt.total_seconds()
 
     # gsw wants conductivity in mS/cm; scale from the units attribute (S/m assumed if unset)
     cndc_factor = cndc_scale_factor(profile_data["CNDC"].attrs.get("units"))
 
-    # Callable predicting CNDC at any given time
+    # Creates a callable function that predicts what CNDC would be at any given time
     conductivity_from_time = interpolate.interp1d(
         profile_data["ELAPSED_TIME[s]"].values,
         profile_data["CNDC"].values,
         bounds_error=False,
     )
 
-    # Trial lags; columns are (lag value, lag score)
+    # Specify the range time lags that the optimum will be found from. Column indexes are: (lag value, lag score)
     time_lags = np.array([np.linspace(-2, 2, 41), np.full(41, np.nan)]).T
 
     saved_psal = {} if return_cost_data else None
 
+    # For each lag find its score and add it to the time_lags array
     for i, lag in enumerate(time_lags[:, 0].copy()):
+        # Apply the time shift
         time_shifted_conductivity = conductivity_from_time(
             profile_data["ELAPSED_TIME[s]"] + lag
         )
 
+        # Derive salinity with the time shifted CNDC (spiking will be minimized when CNDC and TEMP are aligned)
         PSAL = gsw.conversions.SP_from_C(
             time_shifted_conductivity * cndc_factor,
             profile_data["TEMP"],
             profile_data["PRES"],
         )
 
+        # Smooth the salinity profile (to remove spiking)
         PSAL_Smooth = running_average_nan(PSAL, filter_window_size)
 
-        # std of (raw - smoothed) scores spikiness; spikier data scores higher
+        # Subtracting the raw and smoothed salinity gives an indication of "spikiness".
         PSAL_Diff = PSAL - PSAL_Smooth
+
+        # More spiky data will have higher standard deviation - which is used to score the effectiveness of the applied lag
         time_lags[i, 1] = np.nanstd(PSAL_Diff)
 
         if return_cost_data:
             saved_psal[lag] = (PSAL, PSAL_Smooth)
 
-    # Lag with the lowest score
+    # return the time lag which has the lowest score (standard deviation)
     best_score_index = np.argmin(time_lags[:, 1])
     best_lag = time_lags[best_score_index, 0]
 
@@ -147,23 +161,25 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
     Corrects conductivity- and temperature-related sensor errors so that salinity
     can be derived cleanly from a glider CTD.
 
-    Two corrections are applied in sequence:
+    Two corrections are applied in sequence to the dataset:
 
-    - **Conductivity-temperature lag (C-T lag).** ``CNDC`` and ``TEMP`` are measured
-      by separate sensors with different response times, so the records are slightly
-      misaligned and spike salinity at sharp gradients. :meth:`correct_ct_lag`
-      estimates the optimal ``CNDC``/``TEMP`` time shift from a sample of profiles and
-      applies the median shift to the whole dataset, following Woo (2019) [3]_.
+    - **Conductivity-temperature lag (C-T lag).** Conductivity and temperature are
+      measured by separate sensors with different response times, so the two records
+      are slightly misaligned and produce salinity spikes at sharp gradients.
+      :meth:`correct_ct_lag` estimates the optimal time shift between ``CNDC`` and
+      ``TEMP`` from a sample of profiles and applies the median shift to the whole
+      dataset, following Woo (2019) [3]_.
     - **Thermal-mass (thermal lag) error.** The conductivity cell stores and releases
-      heat, so the in-cell water temperature lags the ambient temperature.
+      heat, so the temperature of the water inside it lags the ambient temperature.
       :meth:`correct_thermal_lag` reconstructs the in-cell temperature with the
       recursive filter and fixed coefficients of Morison et al. (1994) [1]_.
 
     The thermal-mass coefficients (``alpha``/``tau``) are taken directly from
-    Morison et al. (1994), not re-optimised in T/S space (cf. Garau et al., 2011
-    [2]_). They suit a pumped Sea-Bird CT sail at the flow rate reported by
-    Woo (2019); unpumped CTDs would need the flow rate derived from the glider's
-    velocity through the water.
+    Morison et al. (1994) and are not re-optimised in T/S space, as done by
+    Morison et al. (1994) or Garau et al. (2011) [2]_. They are appropriate for a
+    pumped Sea-Bird CT sail at the conductivity-cell flow rate reported by
+    Woo (2019); unpumped CTDs would require the flow rate to be derived from the
+    glider's velocity through the water (e.g. from pitch or a flight model).
 
     Samples flagged in ``calculation_flag_filter`` (by default probably-bad (3),
     bad (4), missing (9)) neither inform the lag estimate nor anchor the correction
@@ -177,6 +193,8 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
 
     Examples
     --------
+    Example usage in a pipeline configuration:
+
     .. code-block:: yaml
 
         steps:
@@ -254,34 +272,50 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         return self.context
 
     def correct_ct_lag(self):
-        """Align conductivity to temperature to suppress salinity spikes.
+        """
+        Align conductivity to temperature to suppress salinity spikes.
 
-        For a random sample of up to 100 qualifying profiles (longer than one hour
-        with more than ``3 * filter_window_size`` samples), the optimal ``CNDC``
-        time shift is found by minimising std(salinity - running-average salinity)
-        over trial lags of -2 s to +2 s in 0.1 s steps. The median per-profile lag is
-        applied to ``CNDC`` across the whole dataset. Operates in place on
-        ``self.data``; ``self.ct_lag_median`` is stored for diagnostics.
+        Conductivity and temperature are measured by separate sensors whose physical
+        offset and differing response times leave the two records slightly out of
+        phase, producing salinity spikes at sharp gradients.
+
+        For a random sample of up to 100 qualifying profiles, the optimal time shift
+        of ``CNDC`` relative to ``TEMP`` is found by minimising the standard deviation
+        of (salinity - running-average salinity) — the approach used by RBR's
+        pyRSKtools — rather than comparing downcast against upcast as originally
+        described by Woo (2019). The median of the per-profile lags is then applied
+        to ``CNDC`` across the whole dataset.
+
+        Trial lags run from -2 s to +2 s in 0.1 s steps. Only profiles longer than
+        one hour with more than ``3 * filter_window_size`` samples contribute to the
+        median.
+
+        Notes
+        -----
+        Operates in place on ``self.data``. ``self.ct_lag_median`` is stored for the
+        diagnostics dashboard.
         """
         profile_numbers = np.unique(
             self.data["PROFILE_NUMBER"].dropna(dim="N_MEASUREMENTS").values
         )
 
-        # Intermediate products; columns are (profile number, time lag)
+        # Making a place to store intermediate products. Column dimensions: (profile number, time lag)
         self.per_profile_optimal_lag = np.full((len(profile_numbers), 2), np.nan)
         self._ct_cost_data = None
 
         prof_arr = self.data["PROFILE_NUMBER"].values
 
-        # Randomly permute for uniform sampling across the dataset
+        # Randomly permute to ensure uniform sampling across the dataset
         indices = np.random.permutation(len(profile_numbers))
 
         processed_count = 0
         max_profiles = 100
         filter_size = self.filter_window_size
 
-        # Cheap pre-scan (time span + count, no interpolation) so the progress bar
-        # total matches the number of qualifying profiles actually processed.
+        # Only a random sample of up to ``max_profiles`` profiles is processed to estimate
+        # the median lag. Cheaply pre-scan (no salinity/interpolation, just per-profile time
+        # span and count) to find how many profiles qualify, so the bar total matches what
+        # will actually be processed and reaches 100%.
         time_arr = self.data[self.time_col].values
         finite = ~pd.isnull(time_arr) & ~pd.isnull(prof_arr)
         grouped_times = pd.Series(time_arr[finite]).groupby(prof_arr[finite])
@@ -382,13 +416,24 @@ class AdjustSalinity(BaseStep, QCHandlingMixin):
         self.data["CNDC"][valid_data_mask] = data_subset["CNDC"]
 
     def correct_thermal_lag(self):
-        """Correct the thermal-mass error in temperature.
+        """
+        Correct the thermal-mass error in temperature.
 
-        Reconstructs the in-cell temperature per profile using the recursive filter
-        of Morison et al. (1994) (their eq. 5). The ``alpha``/``tau`` coefficients are
-        the fixed Morison et al. (1994) values scaled by the flow rate reported by
-        Woo (2019). Temperature is resampled to 1 Hz for the filter and interpolated
-        back onto the original sampling. Operates in place on ``self.data``.
+        The conductivity cell stores and releases heat, so the temperature of the
+        water inside it lags the ambient temperature and biases the derived salinity.
+        This reconstructs the in-cell temperature for each profile using the recursive
+        filter of Morison et al. (1994) (their eq. 5), which does not require the
+        sensitivity of temperature to conductivity (their eq. 2).
+
+        The amplitude (``alpha``) and time-constant (``tau``) coefficients are the
+        fixed values of Morison et al. (1994), scaled by the conductivity-cell flow
+        rate reported by Woo (2019); they are not re-optimised in T/S space (cf.
+        Garau et al., 2011). Temperature is resampled to 1 Hz for the filter and
+        interpolated back onto the original sampling.
+
+        Notes
+        -----
+        Operates in place on ``self.data``.
         """
         corrected_temp_array = np.full(len(self.data["TEMP"]), np.nan)
         prof_arr = self.data["PROFILE_NUMBER"].values
